@@ -5924,6 +5924,82 @@ document.addEventListener('DOMContentLoaded', () => {
       Swal.fire('Hata', 'Öğrenciler yüklenemedi.', 'error');
     });
   }
+function topluOgrenciYukleExcel(jsonData) {
+    if (!Array.isArray(jsonData) || jsonData.length === 0) {
+        alert("Excel dosyasında geçerli öğrenci verisi bulunamadı.");
+        return;
+    }
+
+    let yuklenen = 0;
+    let basarisiz = 0;
+
+    jsonData.forEach((item, index) => {
+        const toplamTutar = parseFloat(item["Toplam Tutar"] || 0);
+        const taksitSayisi = parseInt(item["Taksit Sayısı"] || 1);
+        const ilkTaksitTarihi = new Date(item["İlk Taksit Tarihi"]);
+        const taksitTutari = Math.floor(toplamTutar / taksitSayisi);
+
+        const taksitler = [];
+        for (let i = 0; i < taksitSayisi; i++) {
+            const tarih = new Date(ilkTaksitTarihi);
+            tarih.setMonth(tarih.getMonth() + i);
+            taksitler.push({
+                tarih: tarih.toISOString().split("T")[0], // yyyy-mm-dd
+                tutar: taksitTutari,
+                odenen: 0,
+                odendi: false
+            });
+        }
+
+        const payload = {
+            guncellenmeZamani: new Date().toISOString(),
+            ogrenci: {
+                adSoyad: item["Ad Soyad"],
+                dogumTarihi: formatTarih(item["Doğum Tarihi"]),
+                tc: item["TC Kimlik No"],
+                ogrNo: item["Öğrenci Numarası"],
+                sinif: item["Sınıf"],
+                grup: item["Grup"],
+                okul: item["Okul Adı"],
+                egitimProgrami: item["Eğitim Programı"],
+                kayitTarihi: formatTarih(item["Kayıt Tarihi"]),
+                islemTarihi: new Date().toISOString().split("T")[0]
+            },
+            veli: {
+                adSoyad: item["Veli Ad Soyad"],
+                telefon1: item["Veli Telefon 1"],
+                telefon2: item["Veli Telefon 2"]
+            },
+            odeme: {
+                toplamTutar: toplamTutar,
+                paraBirimi: item["Para Birimi"],
+                taksitler: taksitler
+            }
+        };
+
+        firebase.database().ref("ogrenciler").push(payload)
+            .then(() => {
+                yuklenen++;
+                if (yuklenen + basarisiz === jsonData.length) {
+                    alert(`✔ Toplam Yükleme Tamamlandı\nBaşarılı: ${yuklenen}\nHatalı: ${basarisiz}`);
+                }
+            })
+            .catch((err) => {
+                console.error(`❌ Satır ${index + 2} yüklenemedi`, err);
+                basarisiz++;
+                if (yuklenen + basarisiz === jsonData.length) {
+                    alert(`✔ Toplam Yükleme Tamamlandı\nBaşarılı: ${yuklenen}\nHatalı: ${basarisiz}`);
+                }
+            });
+    });
+
+    function formatTarih(tarihStr) {
+        const [gun, ay, yil] = tarihStr.split(".");
+        return `${yil}-${ay.padStart(2, "0")}-${gun.padStart(2, "0")}`;
+    }
+}
+
+
 
   // Toplu silme işlemi
   function acTopluSilModal() {
