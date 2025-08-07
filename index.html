@@ -5043,9 +5043,9 @@ ${giderSatirlari}
         let count = 0;
         Object.keys(taksitler).forEach(idx => {
           const t = taksitler[idx] || {};
-          const tarihStr = t.tarih;
-          if (!tarihStr) return;
-          const tarih = new Date(tarihStr);
+          const tariStr = t.tarih;
+          if (!tariStr) return;
+          const tarih = new Date(tariStr);
           if (type !== 'all' && (tarih < start || tarih > end)) return;
           const tutar = parseFloat(t.tutar || 0);
           toplam += tutar;
@@ -5925,78 +5925,101 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 function topluOgrenciYukleExcel(jsonData) {
-    if (!Array.isArray(jsonData) || jsonData.length === 0) {
-        alert("Excel dosyasında geçerli öğrenci verisi bulunamadı.");
-        return;
-    }
+  if (!Array.isArray(jsonData) || jsonData.length === 0) {
+    alert("Excel dosyasında geçerli öğrenci verisi bulunamadı.");
+    return;
+  }
 
-    let yuklenen = 0;
-    let basarisiz = 0;
+  let yuklenen = 0;
+  let basarisiz = 0;
 
-    jsonData.forEach((item, index) => {
-        const toplamTutar = parseFloat(item["Toplam Tutar"] || 0);
-        const taksitSayisi = parseInt(item["Taksit Sayısı"] || 1);
-        const ilkTaksitTarihi = new Date(item["İlk Taksit Tarihi"]);
-        const taksitTutari = Math.floor(toplamTutar / taksitSayisi);
+  jsonData.forEach((item, index) => {
+    try {
+      const toplamTutar = parseFloat(item["Toplam Tutar"]) || 0;
+      const taksitSayisi = parseInt(item["Taksit Sayısı"]) || 1;
+      const ilkTaksitTarihiRaw = item["İlk Taksit Tarihi"];
+      const ilkTaksitTarihi = excelSerialToDate(ilkTaksitTarihiRaw);
 
-        const taksitler = [];
-        for (let i = 0; i < taksitSayisi; i++) {
-            const tarih = new Date(ilkTaksitTarihi);
-            tarih.setMonth(tarih.getMonth() + i);
-            taksitler.push({
-                tarih: tarih.toISOString().split("T")[0], // yyyy-mm-dd
-                tutar: taksitTutari,
-                odenen: 0,
-                odendi: false
-            });
+      // Taksit hesaplama
+      const toplamYuvarlanmis = Math.floor(toplamTutar / 50) * 50;
+      const temelTaksit = Math.floor(toplamYuvarlanmis / taksitSayisi / 50) * 50;
+      const fark = toplamTutar - (temelTaksit * taksitSayisi);
+      const ilkTaksitTutari = temelTaksit + fark;
+
+      const taksitler = [];
+      for (let i = 0; i < taksitSayisi; i++) {
+        const tarih = new Date(ilkTaksitTarihi);
+        tarih.setMonth(tarih.getMonth() + i);
+        taksitler.push({
+          tarih: tarih.toISOString().split("T")[0],
+          tutar: i === 0 ? ilkTaksitTutari : temelTaksit,
+          odenen: 0,
+          odendi: false
+        });
+      }
+
+      const payload = {
+        guncellenmeZamani: new Date().toISOString(),
+        ogrenci: {
+          adSoyad: (item["Ad Soyad"] || "").toString(),
+          dogumTarihi: excelSerialToDate(item["Doğum Tarihi"]),
+          tc: (item["TC Kimlik No"] || "").toString(),
+          ogrNo: (item["Öğrenci Numarası"] || "").toString(),
+          sinif: (item["Sınıf"] || "").toString(),
+          grup: (item["Grup"] || "").toString().toUpperCase(),
+          okul: (item["Okul Adı"] || "").toString(),
+          egitimProgrami: (item["Eğitim Programı"] || "").toString(),
+          kayitTarihi: excelSerialToDate(item["Kayıt Tarihi"]),
+          islemTarihi: getTodayLocal()
+        },
+        veli: {
+          adSoyad: (item["Veli Ad Soyad"] || "").toString(),
+          telefon1: (item["Veli Telefon 1"] || "").toString(),
+          telefon2: (item["Veli Telefon 2"] || "").toString()
+        },
+        odeme: {
+          toplamTutar: toplamTutar,
+          paraBirimi: (item["Para Birimi"] || "TRY").toString().toUpperCase(),
+          taksitler: taksitler
         }
+      };
 
-        const payload = {
-            guncellenmeZamani: new Date().toISOString(),
-            ogrenci: {
-                adSoyad: item["Ad Soyad"],
-                dogumTarihi: formatTarih(item["Doğum Tarihi"]),
-                tc: item["TC Kimlik No"],
-                ogrNo: item["Öğrenci Numarası"],
-                sinif: item["Sınıf"],
-                grup: item["Grup"],
-                okul: item["Okul Adı"],
-                egitimProgrami: item["Eğitim Programı"],
-                kayitTarihi: formatTarih(item["Kayıt Tarihi"]),
-                islemTarihi: new Date().toISOString().split("T")[0]
-            },
-            veli: {
-                adSoyad: item["Veli Ad Soyad"],
-                telefon1: item["Veli Telefon 1"],
-                telefon2: item["Veli Telefon 2"]
-            },
-            odeme: {
-                toplamTutar: toplamTutar,
-                paraBirimi: item["Para Birimi"],
-                taksitler: taksitler
-            }
-        };
+      // Firebase'e push yerine ogrNo ile yazmak istiyorsan bu satırı değiştir:
+      firebase.database().ref("ogrenciler").push(payload)
+        .then(() => {
+          yuklenen++;
+          if (yuklenen + basarisiz === jsonData.length) {
+            Swal.fire("✔ Yükleme Tamamlandı", `Başarılı: ${yuklenen}, Hatalı: ${basarisiz}`, "success");
+          }
+        })
+        .catch((err) => {
+          console.error(`❌ Satır ${index + 2} yüklenemedi`, err);
+          basarisiz++;
+          if (yuklenen + basarisiz === jsonData.length) {
+            Swal.fire("✔ Yükleme Tamamlandı", `Başarılı: ${yuklenen}, Hatalı: ${basarisiz}`, "warning");
+          }
+        });
 
-        firebase.database().ref("ogrenciler").push(payload)
-            .then(() => {
-                yuklenen++;
-                if (yuklenen + basarisiz === jsonData.length) {
-                    alert(`✔ Toplam Yükleme Tamamlandı\nBaşarılı: ${yuklenen}\nHatalı: ${basarisiz}`);
-                }
-            })
-            .catch((err) => {
-                console.error(`❌ Satır ${index + 2} yüklenemedi`, err);
-                basarisiz++;
-                if (yuklenen + basarisiz === jsonData.length) {
-                    alert(`✔ Toplam Yükleme Tamamlandı\nBaşarılı: ${yuklenen}\nHatalı: ${basarisiz}`);
-                }
-            });
-    });
-
-    function formatTarih(tarihStr) {
-        const [gun, ay, yil] = tarihStr.split(".");
-        return `${yil}-${ay.padStart(2, "0")}-${gun.padStart(2, "0")}`;
+    } catch (err) {
+      console.error(`⚠ Hata - Satır ${index + 2}:`, err);
+      basarisiz++;
     }
+  });
+
+  // Excel tarih seri numarasını YYYY-MM-DD formatına çevirir
+  function excelSerialToDate(serial) {
+  if (!serial || isNaN(serial)) return "";
+
+  const excelEpoch = new Date(1899, 11, 30);
+  // Excel günü * milisaniye + 1 gün (86400000ms)
+  const tarih = new Date(excelEpoch.getTime() + ((serial + 1) * 86400000));
+  return tarih.toISOString().split("T")[0];
+}
+}
+function getTodayLocal() {
+  const now = new Date();
+  now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+  return now.toISOString().split("T")[0];  // yyyy-mm-dd
 }
 
 
