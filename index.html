@@ -2042,20 +2042,20 @@ textarea {
 
 <!-- 📄 Şablon rehberi modalı -->
 <div id="sablonModal" class="modal" style="display:none;" onclick="kapatSablonModal(event)">
-  <!-- İçeriğe tıklanınca üst kattaki olayın tetiklenmesini engellemek için stopPropagation ekle -->
   <div class="modal-content" style="max-width:600px;" onclick="event.stopPropagation()">
-    <!-- Sağ üst köşede çalışan kapatma butonu -->
     <button type="button" class="sablon-close" onclick="kapatSablonModal(event)" style="position:absolute; top:8px; right:12px; border:none; background:transparent; font-size:32px; font-weight:bold; cursor:pointer; color:#D84315;">×</button>
+    
     <h3>📄 Excel Şablonu Nasıl Hazırlanır?</h3>
-    <p>1. Aşağıdaki şablonu inceleyin.</p>
-    <p>2. Dosyayı açıp her satıra sırasıyla <strong>Ad Soyad, Öğrenci No, Veli Telefon, Sınıf, Grup, Program, Toplam Tutar, Taksit Sayısı</strong> bilgilerini girin.</p>
-    <p>3. Kaydedip, geri dönerek <em>Toplu Öğrenci Yükle</em> seçeneğinden bu dosyayı sisteme yükleyin.</p>
-    <!-- Örnek resim daha önce yüklenemiyordu; yer tutucu resmi kullanıyoruz -->
-    <!-- Şablon rehberi içerisindeki örnek resmi kullanıcı tarafından sağlanan ekran görüntüsü ile değiştirildi -->
-    <img src="https://i.ibb.co/MyMJJJtH/Screenshot-1.png" alt="Excel şablon örneği" style="width:100%;height:auto;border-radius:8px;margin:0.5rem 0;" />
-    <!-- İçerideki indirme butonu kaldırıldı; kullanıcı zaten modal dışından şablon indirebilir -->
+    <p>
+      Aşağıda gördüğünüz resimdeki sütun yapısına benzer şekilde yükleme yapmanız durumunda veriler sisteme yüklenecektir.
+    </p>
+    
+    <img src="https://i.ibb.co/HTDRC8Mx/Screenshot-1.jpg" 
+         alt="Excel şablon örneği" 
+         style="width:100%;height:auto;border-radius:8px;margin:0.5rem 0;" />
   </div>
 </div>
+
 
   <script>
 
@@ -2689,12 +2689,17 @@ function yazdirRapor() {
       if (k.tip === "gelir") toplamGelir += tutar;
       else if (k.tip === "gider") toplamGider += tutar;
 
+      // Açıklama alanını (farklı anahtar adları olabilir) al ve temel kaçış yap
+      const acikRaw = (k.aciklama ?? k.aciklamaMetni ?? k.aciklamaGelir ?? k.not ?? "").toString();
+      const aciklama = acikRaw.replace(/[&<>]/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[s]));
+
       rowsHTML += `
         <tr>
           <td style="text-align: center;"><strong>${formatTarih(k.tarih)}</strong></td>
           <td style="text-align: center;"><strong>${capitalize(k.tip)}</strong></td>
           <td style="text-align: center;"><strong>${capitalize(k.kategori)}</strong></td>
           <td style="text-align: center;"><strong>${capitalize(k.odeme)}</strong></td>
+          <td style="text-align: left;">${aciklama}</td>
           <td style="text-align: center;"><strong>${tutar.toFixed(2)} ₺</strong></td>
         </tr>`;
     }
@@ -2762,6 +2767,11 @@ function yazdirRapor() {
       font-size: 0.95rem;
       text-transform: capitalize;
       text-align: center;
+      vertical-align: top;
+    }
+    td:nth-child(5) { /* Açıklama sütunu sola yaslı olsun */
+      text-align: left;
+      text-transform: none;
     }
     th {
       background-color: #FFE0B2;
@@ -2822,6 +2832,7 @@ function yazdirRapor() {
       <th>Tip</th>
       <th>Kategori</th>
       <th>Ödeme Türü</th>
+      <th>Açıklama</th>
       <th>Tutar</th>
     </tr>
     ${rowsHTML}
@@ -2853,6 +2864,7 @@ function yazdirRapor() {
     win.print();
   });
 }
+
 
 
 
