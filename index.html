@@ -978,29 +978,30 @@ textarea {
   background-color: #ff9800;
   color: white;
 }
-/* Taksit ödeme durumuna göre renkler */
-.taksit-odendi {
-  border-left: 5px solid #2ecc71;
-  background-color: #e9f7ef;
+/* ✅ Ödenen – Yeşil */
+.record-card.taksit-odendi {
+  border-left: 6px solid #27ae60 !important;  /* Koyu yeşil */
+  background-color: #eafaf1 !important;      /* Açık pastel yeşil */
 }
 
-.taksit-odenmedi {
-  border-left: 5px solid #e74c3c;
-  background-color: #fdecea;
+/* ❌ Ödenmedi – Mor */
+.record-card.taksit-odenmedi {
+  border-left: 6px solid #8e44ad !important;  /* Koyu mor */
+  background-color: #f4e6f9 !important;      /* Açık lavanta */
 }
 
-/* 🔶 Kısmi ödenmiş taksitler için stil */
-.taksit-kismi {
-  border-left: 5px solid #f1c40f;
-  background-color: #fcf3cf;
-  opacity: 0.9;
+/* 🔶 Kısmi Ödeme – Sarı */
+.record-card.taksit-kismi {
+  border-left: 6px solid #f1c40f !important;  /* Canlı sarı */
+  background-color: #fff9e6 !important;      /* Açık sarı */
 }
 
-/* 🔴 Vadesi geçmiş taksitler için vurgu */
-.taksit-overdue {
-  border-left: 5px solid #e74c3c;
-  background-color: #fadbd8;
+/* ⏰ Vadesi Geçmiş (Overdue) – Koyu Kırmızı */
+.record-card.taksit-overdue {
+  border-left: 6px solid #c0392b !important;  /* Koyu kırmızı */
+  background-color: #fdecea !important;      /* Açık kırmızı/pembe */
 }
+
 .date-filter {
   display: flex;
   flex-wrap: wrap;
