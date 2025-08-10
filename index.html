@@ -1291,6 +1291,32 @@ textarea {
   background-color: #0056b3;
   transform: scale(1.05);
 }
+
+@media print {
+  body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  @page { size: A4 portrait; margin: 6mm; } /* Minimum güvenli */
+  #raporlarSonuc { font-size: 9pt !important; }
+  #raporlarSonuc h2, #raporlarSonuc h3 { margin: 0 0 4px 0 !important; }
+  .report-header, .report-footer, .summary-cards { break-inside: avoid; page-break-inside: avoid; }
+  .summary-cards { margin-bottom: 6mm !important; box-shadow: none !important; }
+  .summary-cards > div { box-shadow: none !important; border: 1px solid #ddd !important; }
+
+  /* Grafik yazdırmada gereksiz */
+  .chart-container { display: none !important; }
+
+  /* Tablo daha sıkı */
+  table[data-report-table="1"] { width:100% !important; border-collapse: collapse !important; font-size: 8.5pt !important; }
+  table[data-report-table="1"] thead { display: table-header-group !important; }
+  table[data-report-table="1"] tfoot { display: table-footer-group !important; }
+  table[data-report-table="1"] thead th {
+    position: static !important; background:#fff !important; border-bottom:1px solid #bbb !important; padding:5px 6px !important;
+  }
+  table[data-report-table="1"] td { padding:5px 6px !important; border-bottom:1px solid #eee !important; }
+  table[data-report-table="1"] tr { break-inside: avoid; page-break-inside: avoid; }
+  table[data-report-table="1"] tr[style*="background"] { background: transparent !important; }
+}
+/* İsteğe bağlı yatay yazdırma: printRapor('landscape') ile kullanılır */
+@media print { .print-landscape @page { size: A4 landscape; margin: 6mm; } }
   </style>
 <aside>
     <h1>Fenomen Çocuk Kulübü</h1>
@@ -2261,12 +2287,11 @@ function kaydiGuncellePopup(id, tutar, aciklama) {
     }
 
     const kayitlarArray = Object.entries(data).sort((a, b) => {
-  return new Date(b[1].tarih) - new Date(a[1].tarih);
-});
-
+      return new Date(b[1].tarih) - new Date(a[1].tarih);
+    });
 
     kayitlarArray.forEach(([id, kayit]) => {
-      // Filtreleme
+      // Filtreler
       if (
         (filterType && filterType !== "hepsi" && kayit.tip !== filterType) ||
         (filterKategori && kayit.kategori !== filterKategori) ||
@@ -2281,8 +2306,16 @@ function kaydiGuncellePopup(id, tutar, aciklama) {
 
       const formattedDate = new Date(kayit.tarih).toLocaleDateString("tr-TR");
       const upperCurrency = (kayit.paraBirimi || "").toUpperCase();
-      const formattedAmount = `${kayit.tutar?.toFixed(2)} ${upperCurrency}`;
+      const formattedAmount = `${(Number(kayit.tutar) || 0).toFixed(2)} ${upperCurrency}`;
       const cardColor = kayit.tip === "gelir" ? "gelir-card" : "gider-card";
+
+      // NEDEN: Kullanıcıya ham kodu değil, okunur etiket göster.
+      const odemeGorunen = (typeof odemeEtiketi === "function")
+        ? odemeEtiketi(kayit.odeme)
+        : (kayit.odeme || "");
+
+      const kategoriGorunen = (kayit.kategori || "").charAt(0).toUpperCase() + (kayit.kategori || "").slice(1);
+      const tipGorunen = (kayit.tip || "").charAt(0).toUpperCase() + (kayit.tip || "").slice(1);
 
       const div = document.createElement("div");
       div.className = `record-card ${cardColor}`;
@@ -2293,20 +2326,13 @@ function kaydiGuncellePopup(id, tutar, aciklama) {
           <span class="record-amount">${formattedAmount}</span>
         </div>
         <div class="record-details">
-          <span>Kategori: <strong>${
-  kayit.kategori.charAt(0).toUpperCase() + kayit.kategori.slice(1)
-}</strong></span> |
-<span>Ödeme: <strong>${
-  kayit.odeme.charAt(0).toUpperCase() + kayit.odeme.slice(1)
-}</strong></span> |
-<span>Tür: <strong>${
-  kayit.tip.charAt(0).toUpperCase() + kayit.tip.slice(1)
-}</strong></span>
-
+          <span>Kategori: <strong>${kategoriGorunen}</strong></span> |
+          <span>Ödeme: <strong>${odemeGorunen}</strong></span> |
+          <span>Tür: <strong>${tipGorunen}</strong></span>
         </div>
         <div class="record-actions">
           <button onclick="sil('${id}')" class="btn-sil">🗑 Sil</button>
-<button data-id="${id}" class="btn-guncelle">✏️ Güncelle</button>        
+          <button data-id="${id}" class="btn-guncelle">✏️ Güncelle</button>
         </div>
       `;
       listDiv.appendChild(div);
@@ -2586,6 +2612,25 @@ function kaydiGuncellePopup(id, tutar, aciklama) {
   const startDate = startDateStr ? new Date(startDateStr) : null;
   const endDate = endDateStr ? new Date(endDateStr) : null;
 
+  // Lokal, güvenli etiket dönüştürücü (neden: eski kayıt kodlarını okunur göster)
+  const localOdemeEtiketi = (val) => {
+    if (typeof odemeEtiketi === "function") return odemeEtiketi(val);
+    const MAP = {
+      nakit: "Nakit",
+      kredi_karti: "Kredi Kartı",
+      eft: "EFT / Havale",
+      elden_banka: "Elden Bankaya Yatırma",
+      online: "Online Ödeme",
+      diger: "Diğer",
+      diğer: "Diğer"
+    };
+    if (!val) return "";
+    const key = String(val).toLowerCase().trim()
+      .replaceAll("ğ","g").replaceAll("ı","i").replaceAll("ö","o")
+      .replaceAll("ü","u").replaceAll("ş","s").replaceAll("ç","c");
+    return MAP[key] || String(val);
+  };
+
   firebase.database().ref("kayitlar").once("value", snap => {
     const data = snap.val();
 
@@ -2628,20 +2673,27 @@ function kaydiGuncellePopup(id, tutar, aciklama) {
         </tr>`;
 
     for (let [id, k] of entries) {
+      const tarih = formatTarih(k.tarih);
+      const tip = capitalize(k.tip || "");
+      const kategori = capitalize(k.kategori || "");
+      const odeme = localOdemeEtiketi(k.odeme);
+      const tutar = Number(k.tutar || 0).toFixed(2) + " ₺";
+
       html += `
         <tr>
-          <td>${formatTarih(k.tarih)}</td>
-          <td>${capitalize(k.tip)}</td>
-          <td>${capitalize(k.kategori)}</td>
-          <td>${capitalize(k.odeme)}</td>
-          <td>${k.tutar.toFixed(2)} ₺</td>
+          <td>${tarih}</td>
+          <td>${tip}</td>
+          <td>${kategori}</td>
+          <td>${odeme}</td>
+          <td>${tutar}</td>
         </tr>`;
     }
 
     html += `</table>`;
     onizleme.innerHTML = html;
   });
- }
+}
+
 
 
 
@@ -2694,14 +2746,14 @@ function yazdirRapor() {
       const aciklama = acikRaw.replace(/[&<>]/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[s]));
 
       rowsHTML += `
-        <tr>
-          <td style="text-align: center;"><strong>${formatTarih(k.tarih)}</strong></td>
-          <td style="text-align: center;"><strong>${capitalize(k.tip)}</strong></td>
-          <td style="text-align: center;"><strong>${capitalize(k.kategori)}</strong></td>
-          <td style="text-align: center;"><strong>${capitalize(k.odeme)}</strong></td>
-          <td style="text-align: left;">${aciklama}</td>
-          <td style="text-align: center;"><strong>${tutar.toFixed(2)} ₺</strong></td>
-        </tr>`;
+  <tr>
+    <td style="text-align: center;"><strong>${formatTarih(k.tarih)}</strong></td>
+    <td style="text-align: center;"><strong>${capitalize(k.tip)}</strong></td>
+    <td style="text-align: center;"><strong>${capitalize(k.kategori)}</strong></td>
+    <td style="text-align: center;"><strong>${odemeEtiketi(k.odeme)}</strong></td>
+    <td style="text-align: left;">${aciklama}</td>
+    <td style="text-align: center;"><strong>${tutar.toFixed(2)} ₺</strong></td>
+  </tr>`;
     }
 
     const fark = toplamGelir - toplamGider;
@@ -3163,7 +3215,7 @@ modalFormatAmount();
  function kapatWhatsappModal() {
   document.getElementById("whatsappModal").style.display = "none";
  }
- function olusturWhatsappMesaji() {
+function olusturWhatsappMesaji() {
   const raporBaslik = "Fenomen Çocuk Kulübü - Mali Rapor";
   const start = document.getElementById("startDate").value;
   const end = document.getElementById("endDate").value;
@@ -3178,21 +3230,24 @@ modalFormatAmount();
 
   const satirlar = kayitlar.map(k => {
     const tutar = k.tutar.toFixed(2);
-    const aciklama = k.aciklama ? ` (${k.aciklama})` : "";
-    const satir = `- ${k.aciklama || "Açıklama Yok"} | ${capitalize(k.odeme)} | ${tutar} ₺`;
+    const odemeTur = (typeof odemeEtiketi === "function")
+      ? odemeEtiketi(k.odeme)
+      : (k.odeme || ""); // fallback
 
     if (k.tip === "gelir") toplamGelir += k.tutar;
     else if (k.tip === "gider") toplamGider += k.tutar;
 
-    return { satir, tip: k.tip };
+    return {
+      satir: `- ${k.aciklama || "Açıklama Yok"} | ${odemeTur} | ${tutar} ₺`,
+      tip: k.tip
+    };
   });
 
   const gelirSatirlari = satirlar.filter(s => s.tip === "gelir").map(s => s.satir).join("\n") || "- Yok";
   const giderSatirlari = satirlar.filter(s => s.tip === "gider").map(s => s.satir).join("\n") || "- Yok";
-
   const fark = toplamGelir - toplamGider;
 
-  const mesaj =
+  const mesaj = 
 `📄 *${raporBaslik}*
 
 📅 Tarih Aralığı: ${tarihMetni}
@@ -3208,7 +3263,8 @@ ${giderSatirlari}
 📈 Fark: ${fark.toFixed(2)} ₺`;
 
   return mesaj;
- }
+}
+
  function gonderWhatsappMesaji() {
   const message = document.getElementById("whatsappMesaji").value.trim();
 
@@ -5150,121 +5206,108 @@ ${giderSatirlari}
   // Bu yardımcı fonksiyon, bir taksit ödemesi alındığında gelir/kayitlar
   // tablosuna otomatik bir gelir kaydı ekler. Odeme tutarı ve kısmi olup olmadığı
   // parametre olarak alınır ve kaydedilen kayıt kimliği taksit verisine not edilir.
-  async function addGelirForTaksit(ogrId, index, odemeTutari, isKismi) {
-    try {
-      const db = firebase.database();
-      // Öğrenci ve ödeme bilgilerini al
-      const [ogrSnap, odemeSnap] = await Promise.all([
-        db.ref(`ogrenciler/${ogrId}/ogrenci`).once("value"),
-        db.ref(`ogrenciler/${ogrId}/odeme`).once("value")
-      ]);
-      const ogrBilgi = ogrSnap.val() || {};
-      const odemeBilgi = odemeSnap.val() || {};
-      // Taksit numarasını belirle (index genellikle 0 tabanlı)
-      const taksitNo = parseInt(index) + 1;
-      const adSoyad = ogrBilgi.adSoyad || "";
-      const ogrNo = ogrBilgi.ogrNo || "";
-      // Açıklama: öğrenci adı, numarası ve taksit numarası. Kısmi ödemede not düşülür
-      const aciklama = `${adSoyad} (${ogrNo}) - ${taksitNo}. taksit${isKismi ? ' (Kısmi Ödeme)' : ''}`;
-      // Güncel tarih (saat dilimi farkını hesaba katar)
-      const now = new Date();
-      now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-      const tarihISO = now.toISOString().split("T")[0];
-      // Kategorilerde "Taksit" kategorisi yoksa ekle
-      const kategoriRef = db.ref("kategoriGelir");
-      try {
-        const catSnap = await kategoriRef.orderByChild("ad").equalTo("Taksit").once("value");
-        if (!catSnap.exists()) {
-          await kategoriRef.push({ ad: "Taksit" });
-        }
-      } catch (err) {
-        console.error("Kategori kontrol hatası:", err);
-      }
+async function addGelirForTaksit(ogrId, index, odemeTutari, isKismi, odemeTuru) {
+  const db = firebase.database();
+  try {
+    const [ogrSnap, odemeSnap] = await Promise.all([
+      db.ref(`ogrenciler/${ogrId}/ogrenci`).once('value'),
+      db.ref(`ogrenciler/${ogrId}/odeme`).once('value')
+    ]);
+    const ogr = ogrSnap.val() || {};
+    const odeme = odemeSnap.val() || {};
 
-      // Kayıt nesnesi
-      const kayit = {
-        tip: "gelir",
-        tarih: tarihISO,
-        kategori: "Taksit",
-        odeme: "taksit",
-        paraBirimi: odemeBilgi.paraBirimi || "TRY",
-        tutar: parseFloat(odemeTutari) || 0,
-        aciklama: aciklama,
-        eklenmeZamani: new Date().toISOString()
-      };
-      // Kayıtlar listesine ekle ve anahtarını al
-      const kayitRef = await db.ref("kayitlar").push(kayit);
-      const kayitId = kayitRef.key;
-      // Taksit verisine bu kaydı not et
-      const gelirKayitlarRef = db.ref(`ogrenciler/${ogrId}/odeme/taksitler/${index}/gelirKayitlar`);
-      await gelirKayitlarRef.update({ [kayitId]: true });
-      return kayitId;
-    } catch (e) {
-      console.error("Gelir kaydı ekleme hatası:", e);
-    }
+    const taksitNo = Number(index) + 1;
+    const aciklama = `${ogr.adSoyad || ''} (${ogr.ogrNo || ''}) - ${taksitNo}. taksit${isKismi ? ' (Kısmi Ödeme)' : ''}`;
+
+    // Tarihi yerel güne sabitle (saat farkı kaynaklı sapmalar olmasın)
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    const tarihISO = now.toISOString().split('T')[0];
+
+    // Kategori "Taksit" yoksa ekle (tekilleştirme)
+    const katQ = await db.ref('kategoriGelir').orderByChild('ad').equalTo('Taksit').once('value');
+    if (!katQ.exists()) await db.ref('kategoriGelir').push({ ad: 'Taksit' });
+
+    const kayit = {
+      tip: 'gelir',
+      tarih: tarihISO,
+      kategori: 'Taksit',
+      odeme: odemeTuru || 'diger',
+      paraBirimi: odeme.paraBirimi || 'TRY',
+      tutar: Number(odemeTutari) || 0,
+      aciklama,
+      eklenmeZamani: new Date().toISOString()
+    };
+
+    const ref = await db.ref('kayitlar').push(kayit);
+    await db
+      .ref(`ogrenciler/${ogrId}/odeme/taksitler/${index}/gelirKayitlar`)
+      .update({ [ref.key]: true });
+
+    return ref.key;
+  } catch (err) {
+    console.error('Gelir kaydı ekleme hatası:', err);
+    await Swal.fire({ icon: 'error', title: 'Hata', text: 'Gelir kaydı oluşturulamadı.' });
+    throw err;
   }
+}
   // Bu fonksiyon bir taksiti tamamen ödenmiş olarak işaretler ve makbuz seçeneklerini gösterir.
   // odemeMiktari parametresi isteğe bağlıdır; eğer verilirse o tutar gelir kaydı için kullanılır.
-  function taksitSetOdendi(ogrId, index, odemeMiktari) {
-    // Kaydırma konumunu kaydet, liste yenilendikten sonra bu pozisyona geri dön
-    window.prevTaksitScrollY = window.scrollY;
-    // Son tıklanan kartın id'sini sakla
-    window.lastTaksitCardId = `taksit-${ogrId}-${index}`;
-    // URL hash'ini güncelleyerek bu karta bağlantıyı kaydet
-    try {
-      window.location.hash = `taksit-${ogrId}-${index}`;
-    } catch(e) {}
+ async function taksitSetOdendi(ogrId, index, odemeMiktari, odemeTuru) {
     const db = firebase.database();
     const taksitRef = db.ref(`ogrenciler/${ogrId}/odeme/taksitler/${index}`);
-    taksitRef.once("value").then(snap => {
-      const t = snap.val() || {};
-      const tutar = parseFloat(t.tutar || 0);
-      // Daha önce ödenmiş bir miktar varsa, kalan kısmı hesapla
-      const oncekiOdenen = parseFloat(t.odenen || 0);
-      let odemeToRecord;
-      if (typeof odemeMiktari === "number" && !isNaN(odemeMiktari)) {
-        odemeToRecord = odemeMiktari;
-      } else {
-        odemeToRecord = tutar - oncekiOdenen;
-      }
-      // odeme bilgilerini güncelle
-      taksitRef.update({ odendi: true, odenen: tutar }).then(() => {
-        // Ödeme için gelir kaydı ekle (kısmi değil)
-        addGelirForTaksit(ogrId, index, odemeToRecord, false);
-        // öğrenci bilgilerini al
-        Promise.all([
-          db.ref(`ogrenciler/${ogrId}/ogrenci`).once("value"),
-          db.ref(`ogrenciler/${ogrId}/odeme`).once("value")
-        ]).then(([ogrSnap, odemeSnap]) => {
-          const ogrBilgi = ogrSnap.val() || {};
-          const odemeBilgi = odemeSnap.val() || {};
-          // Makbuz seçeneklerini göster
-          showMakbuzOptions({
-            ogrId: ogrId,
-            ogrAd: ogrBilgi.adSoyad || "",
-            ogrNo: ogrBilgi.ogrNo || "",
-            veliTel: ogrBilgi.velTel || "",
-            tutar: tutar,
-            odenen: tutar,
-            tarih: t.tarih || new Date().toISOString().split("T")[0],
-            paraBirimi: odemeBilgi.paraBirimi || "TRY",
-            program: ogrBilgi.egitimProgrami || ""
-          });
-          // Listeleri güncelle
-          taksitListele();
-          odemeListele();
-          // Ödeme alındığında dashboard ve diğer listeleri yenile
-          if (typeof loadDashboardData === 'function') {
-            loadDashboardData();
-          }
-          // Gelir/Gider kayıt listesini de anında yenile
-          if (typeof kayitlariGetir === 'function') {
-            kayitlariGetir();
-          }
+
+    try {
+        const snap = await taksitRef.once('value');
+        const t = snap.val();
+        if (!t) return;
+
+        const tutar = Number(t.tutar || 0);
+        const odenen = Number(t.odenen || 0);
+
+        // Ödeme türü seçilmemişse kullanıcıdan sor
+        if (!odemeTuru) {
+            odemeTuru = await secOdemeTuru();
+            if (!odemeTuru) return; // iptal ederse çık
+        }
+
+        // Gelir kaydına yazılacak miktar
+        const gelirMiktari = typeof odemeMiktari === 'number' && !isNaN(odemeMiktari)
+            ? odemeMiktari
+            : Math.max(tutar - odenen, 0);
+
+        // Firebase güncelle
+        await taksitRef.update({ odendi: true, odenen: tutar });
+        await addGelirForTaksit(ogrId, index, gelirMiktari, false, odemeTuru);
+
+        await Swal.fire({
+            icon: 'success',
+            title: 'Taksit ödendi olarak işaretlendi',
+            timer: 1200,
+            showConfirmButton: false
         });
-      });
-    });
-  }
+
+        // Listeyi yenile
+        if (typeof taksitListele === 'function') taksitListele();
+        if (typeof kayitlariGetir === 'function') kayitlariGetir();
+
+        // 💡 Ödeme sonrası makbuz göster
+        try {
+            viewMakbuz(ogrId, index);
+        } catch (e) {
+            console.error('Makbuz açılırken hata:', e);
+        }
+    } catch (err) {
+        console.error('Taksit ödeme hatası:', err);
+        await Swal.fire({
+            icon: 'error',
+            title: 'Hata',
+            text: 'Ödeme işlemi tamamlanamadı.'
+        });
+        throw err;
+    }
+}
+
 
   // Bu fonksiyon bir taksiti ödenmemiş olarak işaretler (geri alma).
   function taksitSetOdenmedi(ogrId, index) {
@@ -5352,243 +5395,213 @@ ${giderSatirlari}
   }
 
   // Kısmi ödeme işlemi: kullanıcıdan ödeme tutarı alır ve günceller.
-  function taksitKismiOdeme(ogrId, index, toplamTutar, mevcutOdenen) {
-    // Kaydırma konumunu kaydet, liste yenilendikten sonra bu pozisyona geri dön
-    window.prevTaksitScrollY = window.scrollY;
-    // Son tıklanan kartın id'sini sakla
-    window.lastTaksitCardId = `taksit-${ogrId}-${index}`;
-    // URL hash'ini güncelleyerek bu karta bağlantıyı kaydet
-    try {
-      window.location.hash = `taksit-${ogrId}-${index}`;
-    } catch(e) {}
-    const db = firebase.database();
-    const kalan = toplamTutar - mevcutOdenen;
-    Swal.fire({
+function taksitKismiOdeme(ogrId, index) {
+  const db = firebase.database();
+  const taksitRef = db.ref(`ogrenciler/${ogrId}/odeme/taksitler/${index}`);
+
+  taksitRef.once('value').then(async (snap) => {
+    const t = snap.val();
+    if (!t) return;
+
+    const tutar = Number(t.tutar || 0);
+    const odenen = Number(t.odenen || 0);
+    const kalan = Math.max(tutar - odenen, 0);
+
+    const miktarRes = await Swal.fire({
       heightAuto: false,
       title: 'Kısmi Ödeme',
-      html: `<p>Kalan tutar: <strong>${kalan.toFixed(2)}</strong></p>`,
+      html: `<p>Kalan: <strong>${kalan.toFixed(2)}</strong></p>`,
       input: 'number',
-      inputAttributes: {
-        min: 0.01,
-        step: '0.01'
-      },
       inputLabel: 'Ödeme Tutarı',
+      inputAttributes: { min: 0.01, step: '0.01' },
       showCancelButton: true,
-      confirmButtonText: 'Tamam',
+      confirmButtonText: 'Devam',
       cancelButtonText: 'İptal',
-      preConfirm: (value) => {
-        const v = parseFloat(value);
-        if (isNaN(v) || v <= 0) {
-          Swal.showValidationMessage('Geçerli bir tutar girin');
-        } else if (v > kalan) {
-          Swal.showValidationMessage('Tutar kalan değeri aşamaz');
-        }
-        return v;
+      preConfirm: (v) => {
+        const val = parseFloat(v);
+        if (isNaN(val) || val <= 0) return 'Geçerli bir tutar girin';
+        if (val > kalan) return 'Tutar kalan değeri aşamaz';
+        return undefined;
       }
-    }).then(result => {
-      if (!result.isConfirmed) return;
-      // Girilen ödeme tutarını değişkene al
-      const paymentAmount = parseFloat(result.value);
-      const yeniOdenen = mevcutOdenen + paymentAmount;
-      db.ref(`ogrenciler/${ogrId}/odeme/taksitler/${index}`).once("value").then(snap => {
-        const t = snap.val() || {};
-        const tutar = parseFloat(t.tutar || 0);
-        // Eğer yeni ödeme tüm tutarı karşılıyorsa tam ödeme fonksiyonunu çağır.
-        // Son yapılan ödeme tutarı gelir kaydında kullanılmak üzere parametre olarak iletilir
-        if (yeniOdenen >= tutar) {
-          taksitSetOdendi(ogrId, index, paymentAmount);
-          return;
-        }
-        db.ref(`ogrenciler/${ogrId}/odeme/taksitler/${index}`).update({
-          odendi: false,
-          odenen: yeniOdenen
-        }).then(() => {
-          // Kısmi ödeme için gelir kaydı ekle
-          addGelirForTaksit(ogrId, index, paymentAmount, true);
-          // Makbuz seçenekleri için bilgileri al
-          Promise.all([
-            db.ref(`ogrenciler/${ogrId}/ogrenci`).once("value"),
-            db.ref(`ogrenciler/${ogrId}/odeme`).once("value")
-          ]).then(([ogrSnap, odemeSnap]) => {
-            const ogrBilgi = ogrSnap.val() || {};
-            const odemeBilgi = odemeSnap.val() || {};
-            showMakbuzOptions({
-              ogrId: ogrId,
-              ogrAd: ogrBilgi.adSoyad || "",
-              ogrNo: ogrBilgi.ogrNo || "",
-              veliTel: ogrBilgi.velTel || "",
-              tutar: tutar,
-              odenen: yeniOdenen,
-              tarih: t.tarih || new Date().toISOString().split("T")[0],
-              paraBirimi: odemeBilgi.paraBirimi || "TRY",
-              program: ogrBilgi.egitimProgrami || ""
-            });
-            taksitListele();
-            odemeListele();
-            // Ödeme sonrası dashboard verilerini güncelle
-            if (typeof loadDashboardData === 'function') {
-              loadDashboardData();
-            }
-            // Gelir/Gider kayıt listesini de yenile
-            if (typeof kayitlariGetir === 'function') {
-              kayitlariGetir();
-            }
-          });
-        });
-      });
     });
-  }
+    if (!miktarRes.isConfirmed) return;
+
+    const odemeMiktari = parseFloat(miktarRes.value);
+    const odemeTuru = await secOdemeTuru();
+    if (!odemeTuru) return;
+
+    const yeniOdenen = odenen + odemeMiktari;
+
+    // Tam ödemeye döndüyse: taksitSetOdendi zaten makbuzu açacak
+    if (yeniOdenen >= tutar - 1e-6) {
+      await taksitSetOdendi(ogrId, index, odemeMiktari, odemeTuru);
+      return;
+    }
+
+    await taksitRef.update({ odendi: false, odenen: yeniOdenen });
+    await addGelirForTaksit(ogrId, index, odemeMiktari, true, odemeTuru);
+
+    await Swal.fire({ icon: 'success', title: 'Kısmi ödeme alındı', timer: 1200, showConfirmButton: false });
+
+    if (typeof taksitListele === 'function') taksitListele();
+    if (typeof kayitlariGetir === 'function') kayitlariGetir();
+
+    try {
+      // Neden: Kullanıcı kısmi ödemeden hemen sonra makbuzu görmek istiyor.
+      viewMakbuz(ogrId, index);
+    } catch (e) {
+      console.error('Makbuz açma hatası (kısmi):', e);
+    }
+  });
+}
+
 
   // Ödeme sonrası makbuz ve WhatsApp seçeneklerini gösteren modal
-  async function showMakbuzOptions(detay) {
-    // Tüm taksitleri okuyarak toplam kalan borcu ve kalan taksit sayısını hesapla
-    let toplamKalan = 0;
-    let kalanTaksitSayisi = 0;
-    try {
-      const snap = await firebase.database().ref(`ogrenciler/${detay.ogrId}/odeme/taksitler`).once("value");
-      snap.forEach(child => {
-        const t = child.val() || {};
-        const tutar = parseFloat(t.tutar || 0);
-        const odenen = parseFloat(t.odenen || 0);
-        toplamKalan += tutar - odenen;
-        // Eğer taksit tamamen ödenmemişse kalan taksit sayısına ekle
-        if (odenen < tutar) {
-          kalanTaksitSayisi++;
-        }
-      });
-    } catch (e) {
-      console.error(e);
-    }
-    const symbolMap = { "TRY":"₺", "USD":"$", "EUR":"€" };
-    const sym = symbolMap[detay.paraBirimi] || "";
-    const kalanTaksit = (detay.tutar - detay.odenen).toFixed(2);
-    const formatted = `${detay.odenen.toFixed(2)} ${sym}`;
-    const kalanToplam = toplamKalan.toFixed(2);
-    // hesaplanan toplam kalan ve kalan taksit sayısını detay nesnesine ekle
-    detay.totalKalan = parseFloat(kalanToplam);
-    detay.kalanTaksitSayisi = kalanTaksitSayisi;
-    // Daha profesyonel ve bilgilendirici WhatsApp mesajını hazırla
-    let waMsg;
-    if (detay.odenen >= detay.tutar) {
-      // Tam ödeme yapıldı: taksit kalanı zaten sıfırdır. Mesajda kalan toplam borcu bilgilendirme olarak sunulur
-      waMsg =
-        `Fenomen Çocuk Kulübü\n\n` +
-        `Sayın Veli,\n` +
-        `${detay.ogrAd} (${detay.ogrNo}) öğrencimizin ${formatTarih(detay.tarih)} tarihli ödemesi (${formatted}) tarafımıza ulaşmıştır.\n` +
-        `Toplam kalan tutar: ${kalanToplam} ${sym}\n\n` +
-        `İlginiz için teşekkür eder, sağlıklı ve başarılı günler dileriz.`;
-    } else {
-      // Kısmi ödeme: hem taksit kalanı hem toplam borç bilgisi yer alır
-      waMsg =
-        `Fenomen Çocuk Kulübü\n\n` +
-        `Sayın Veli,\n` +
-        `${detay.ogrAd} (${detay.ogrNo}) öğrencimizin ${formatTarih(detay.tarih)} tarihli taksitine ${formatted} tutarında kısmi ödeme yapılmıştır.\n` +
-        `Bu taksitin kalan tutarı: ${kalanTaksit} ${sym}\n` +
-        `Toplam kalan tutar: ${kalanToplam} ${sym}\n\n` +
-        `İlginiz için teşekkür eder, sağlıklı ve başarılı günler dileriz.`;
-    }
-    // Modal başlığını belirle
-    const title = (detay.odenen >= detay.tutar) ? 'Ödeme Kaydedildi' : 'Kısmi Ödeme Kaydedildi';
-    // İçerik: kalan taksit ve toplam/ödenecek bilgisi. 
-    // Başlık satırları kullanıcıya ödeme detaylarını özetler.
-    let htmlContent = `
-        <p><strong>${detay.ogrAd} (${detay.ogrNo})</strong> için ${formatted} ödeme kaydedildi.</p>
-        <p>Tarih: <strong>${formatTarih(detay.tarih)}</strong></p>
-        <p>Taksit Kalanı: <strong>${kalanTaksit} ${sym}</strong></p>
-        <p>Toplam Kalan Tutar: <strong>${kalanToplam} ${sym}</strong></p>
-        <div style="margin-top:1rem; display:flex; gap:0.5rem; justify-content:center;">
-          <button id="printReceiptBtn" class="swal2-confirm swal2-styled" style="background:#28a745;">Makbuz Çıktısı</button>
-          <button id="whatsAppBtn" class="swal2-confirm swal2-styled" style="background:#25D366;">WhatsApp</button>
-        </div>
-      `;
-    // Eğer tam ödeme ise taksit kalanını sıfır olarak göster, ancak yine de bilgilendirme satırında yazdır
-    Swal.fire({
-      title: title,
-      html: htmlContent,
-      showConfirmButton: false,
-      showCloseButton: true,
-      didOpen: () => {
-        const printBtn = document.getElementById('printReceiptBtn');
-        const waBtn = document.getElementById('whatsAppBtn');
-        // Makbuzu yazdırma butonu
-        printBtn.addEventListener('click', () => {
-          const receiptHTML = generateMakbuzHTML(detay);
-          // Yeni pencere açıp makbuzu göster, otomatik yazdırma yerine kullanıcıya bırak
-          const win = window.open('', '_blank');
-          win.document.write(receiptHTML);
-          win.document.close();
-          win.focus();
-        });
-        // WhatsApp butonu: mesajı gönder
-        waBtn.addEventListener('click', () => {
-          sendWhatsappReceipt(waMsg, detay.veliTel);
-        });
-      },
-      // Modal kapanırken kaydırma konumunu koru
-      willClose: () => {
-        try {
-          // Kayıtlı scroll pozisyonu varsa geri dön
-          if (typeof window.prevTaksitScrollY !== 'undefined') {
-            const y = window.prevTaksitScrollY;
-            // birkaç deneme ile scroll'u geri getir
-            setTimeout(() => {
-              window.scrollTo(0, y);
-            }, 0);
-            setTimeout(() => {
-              window.scrollTo(0, y);
-            }, 300);
-            window.prevTaksitScrollY = undefined;
-          }
-          // Son tıklanan kart id'sine scroll
-          if (window.lastTaksitCardId) {
-            const target = document.getElementById(window.lastTaksitCardId);
-            window.lastTaksitCardId = undefined;
-            if (target) {
-              setTimeout(() => {
-                target.scrollIntoView({ block: 'center' });
-              }, 0);
-              setTimeout(() => {
-                target.scrollIntoView({ block: 'center' });
-              }, 300);
-            }
-          }
-        } catch (e) {
-          console.error(e);
-        }
-      },
-      heightAuto: false,
-      didClose: () => {
-        // Bazı tarayıcılarda modal tamamen kapatıldıktan sonra scroll sıfırlanabilir;
-        // bu nedenle aynı işlemi burada da tekrarla
-        try {
-          if (typeof window.prevTaksitScrollY !== 'undefined') {
-            const y = window.prevTaksitScrollY;
-            setTimeout(() => {
-              window.scrollTo(0, y);
-            }, 0);
-            setTimeout(() => {
-              window.scrollTo(0, y);
-            }, 300);
-            window.prevTaksitScrollY = undefined;
-          }
-          if (window.lastTaksitCardId) {
-            const target = document.getElementById(window.lastTaksitCardId);
-            window.lastTaksitCardId = undefined;
-            if (target) {
-              setTimeout(() => {
-                target.scrollIntoView({ block: 'center' });
-              }, 0);
-              setTimeout(() => {
-                target.scrollIntoView({ block: 'center' });
-              }, 300);
-            }
-          }
-        } catch (e) {
-          console.error(e);
-        }
-      }
+// path/to/showMakbuzOptions.js
+async function showMakbuzOptions(detay) {
+  let toplamKalan = 0;
+  let kalanTaksitSayisi = 0;
+  try {
+    const snap = await firebase.database().ref(`ogrenciler/${detay.ogrId}/odeme/taksitler`).once("value");
+    snap.forEach(child => {
+      const t = child.val() || {};
+      const tutar = parseFloat(t.tutar || 0);
+      const odenen = parseFloat(t.odenen || 0);
+      toplamKalan += tutar - odenen;
+      if (odenen < tutar) kalanTaksitSayisi++;
     });
+  } catch (e) { console.error(e); }
+
+  const symbolMap = { TRY: "₺", USD: "$", EUR: "€" };
+  const sym = symbolMap[detay.paraBirimi] || "";
+  const kalanTaksit = (detay.tutar - detay.odenen).toFixed(2);
+  const formatted = `${detay.odenen.toFixed(2)} ${sym}`;
+  const kalanToplam = toplamKalan.toFixed(2);
+
+  detay.totalKalan = parseFloat(kalanToplam);
+  detay.kalanTaksitSayisi = kalanTaksitSayisi;
+
+  let waMsg;
+  if (detay.odenen >= detay.tutar) {
+    waMsg =
+      `Fenomen Çocuk Kulübü\n\n` +
+      `Sayın Veli,\n` +
+      `${detay.ogrAd} (${detay.ogrNo}) öğrencimizin ${formatTarih(detay.tarih)} tarihli ödemesi (${formatted}) tarafımıza ulaşmıştır.\n` +
+      `Toplam kalan tutar: ${kalanToplam} ${sym}\n\n` +
+      `İlginiz için teşekkür eder, sağlıklı ve başarılı günler dileriz.`;
+  } else {
+    waMsg =
+      `Fenomen Çocuk Kulübü\n\n` +
+      `Sayın Veli,\n` +
+      `${detay.ogrAd} (${detay.ogrNo}) öğrencimizin ${formatTarih(detay.tarih)} tarihli taksitine ${formatted} tutarında kısmi ödeme yapılmıştır.\n` +
+      `Bu taksitin kalan tutarı: ${kalanTaksit} ${sym}\n` +
+      `Toplam kalan tutar: ${kalanToplam} ${sym}\n\n` +
+      `İlginiz için teşekkür eder, sağlıklı ve başarılı günler dileriz.`;
   }
+
+  const title = detay.odenen >= detay.tutar ? "Ödeme Kaydedildi" : "Kısmi Ödeme Kaydedildi";
+
+  const htmlContent = `
+    <p><strong>${detay.ogrAd} (${detay.ogrNo})</strong> için ${formatted} ödeme kaydedildi.</p>
+    <p>Tarih: <strong>${formatTarih(detay.tarih)}</strong></p>
+    <p>Taksit Kalanı: <strong>${kalanTaksit} ${sym}</strong></p>
+    <p>Toplam Kalan Tutar: <strong>${kalanToplam} ${sym}</strong></p>
+    <div style="margin-top:1rem; display:flex; gap:0.5rem; justify-content:center;">
+      <button id="printReceiptBtn" class="swal2-confirm swal2-styled" style="background:#28a745;">Makbuz Çıktısı</button>
+      <button id="whatsAppBtn" class="swal2-confirm swal2-styled" style="background:#25D366;">WhatsApp</button>
+    </div>
+  `;
+
+  Swal.fire({
+    title,
+    html: htmlContent,
+    showConfirmButton: false,
+    showCloseButton: true,
+    didOpen: () => {
+      const printBtn = document.getElementById("printReceiptBtn");
+      const waBtn = document.getElementById("whatsAppBtn");
+
+      printBtn.addEventListener("click", () => {
+        const raw = generateMakbuzHTML(detay);
+        const receiptHTML = /^\s*<!doctype/i.test(raw) ? raw : `<!doctype html>${raw}`;
+
+        // Görünmez ama render edilebilir boyutta tut (display:none olmasın)
+        const iframe = document.createElement("iframe");
+        iframe.style.position = "fixed";
+        iframe.style.right = "0";
+        iframe.style.bottom = "0";
+        iframe.style.width = "1px";
+        iframe.style.height = "1px";
+        iframe.style.opacity = "0";
+        iframe.style.pointerEvents = "none";
+        iframe.setAttribute("aria-hidden", "true");
+
+        const cleanup = () => { try { document.body.removeChild(iframe); } catch(_){} };
+
+        // Yüklenince print'i PARENT'tan tetikle (kullanıcı etkileşimi korunur)
+        iframe.addEventListener("load", () => {
+          const w = iframe.contentWindow;
+          if (!w) return cleanup();
+          // Safari/Chrome için küçük gecikme güvenli
+          setTimeout(() => {
+            try { w.focus(); } catch(_){}
+            try { w.print(); } catch(_){}
+          }, 100);
+
+          // afterprint her tarayıcıda çalışmayabilir; fail-safe ekle
+          try { w.addEventListener("afterprint", cleanup); } catch(_) {}
+          setTimeout(cleanup, 5000);
+        });
+
+        iframe.srcdoc = receiptHTML; // gezinti yok => blank sekme yok
+        document.body.appendChild(iframe);
+      });
+
+      waBtn.addEventListener("click", () => {
+        sendWhatsappReceipt(waMsg, detay.veliTel);
+      });
+    },
+    willClose: () => {
+      try {
+        if (typeof window.prevTaksitScrollY !== "undefined") {
+          const y = window.prevTaksitScrollY;
+          setTimeout(() => { window.scrollTo(0, y); }, 0);
+          setTimeout(() => { window.scrollTo(0, y); }, 300);
+          window.prevTaksitScrollY = undefined;
+        }
+        if (window.lastTaksitCardId) {
+          const target = document.getElementById(window.lastTaksitCardId);
+          window.lastTaksitCardId = undefined;
+          if (target) {
+            setTimeout(() => { target.scrollIntoView({ block: "center" }); }, 0);
+            setTimeout(() => { target.scrollIntoView({ block: "center" }); }, 300);
+          }
+        }
+      } catch (e) { console.error(e); }
+    },
+    heightAuto: false,
+    didClose: () => {
+      try {
+        if (typeof window.prevTaksitScrollY !== "undefined") {
+          const y = window.prevTaksitScrollY;
+          setTimeout(() => { window.scrollTo(0, y); }, 0);
+          setTimeout(() => { window.scrollTo(0, y); }, 300);
+          window.prevTaksitScrollY = undefined;
+        }
+        if (window.lastTaksitCardId) {
+          const target = document.getElementById(window.lastTaksitCardId);
+          window.lastTaksitCardId = undefined;
+          if (target) {
+            setTimeout(() => { target.scrollIntoView({ block: "center" }); }, 0);
+            setTimeout(() => { target.scrollIntoView({ block: "center" }); }, 300);
+          }
+        }
+      } catch (e) { console.error(e); }
+    }
+  });
+}
+
+
 
 // 📄 Şablon rehberi modalını açar
 function gosterSablonModal() {
@@ -6464,6 +6477,146 @@ function getTodayLocal() {
   }
 
 // 📊 Raporlar modülünün basit rapor oluşturma fonksiyonu
+
+/** Tarihi güvenli şekilde Date'e çevirir (string | number | Date). */
+function toDateSafe(v) {
+  if (!v) return null;
+  if (v instanceof Date) return isNaN(v) ? null : v;
+  const d = new Date(v);
+  return isNaN(d) ? null : d;
+}
+
+/** NaN korumalı sayı parse. */
+function toNumberSafe(v, fallback = 0) {
+  const n = parseFloat(String(v).replace(/\./g, '').replace(',', '.'));
+  return isNaN(n) ? fallback : n;
+}
+
+/** TRY para formatı. */
+function tl(n) {
+  try {
+    return new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY', maximumFractionDigits: 2 }).format(n || 0);
+  } catch {
+    return (n || 0).toFixed(2) + ' ₺';
+  }
+}
+
+/** Rapor başlığı (logo + başlık + opsiyonel altbaşlık). */
+function buildReportHeader(title, subtitle = '') {
+  return (
+    '<div class="report-header" style="display:flex; align-items:center; gap:10px; margin-bottom:1rem;">' +
+      '<img src="https://i.ibb.co/cS9PSRpq/Logo-Fenomen.jpg" style="width:60px;height:auto;" alt="logo" />' +
+      '<div>' +
+        '<h2 style="margin:0;">Fenomen Çocuk Kulübü</h2>' +
+        `<h3 style="margin:0; color:#FF6B00;">${title}</h3>` +
+        (subtitle ? `<div style="color:#555; font-size:.9rem; margin-top:2px;">${subtitle}</div>` : '') +
+      '</div>' +
+    '</div>'
+  );
+}
+
+/** Özet kutucukları. */
+function buildSummaryCards(items) {
+  const card = (it) =>
+    `<div style="
+      flex:1; min-width:180px; background:#fff; border-radius:12px;
+      box-shadow:0 6px 16px rgba(0,0,0,.06); padding:1rem 1.2rem;
+      border-left:8px solid ${it.cls === 'gelir' ? '#2ecc71' : it.cls === 'gider' ? '#e74c3c' : '#ff6b00'};
+    ">
+      <div style="font-weight:700; color:#555;">${it.label}</div>
+      <div style="font-size:1.4rem; font-weight:800; margin-top:.25rem;">${it.value}</div>
+    </div>`;
+  return `<div class="summary-cards" style="display:flex; gap:1rem; flex-wrap:wrap; margin-bottom:1rem;">${items.map(card).join('')}</div>`;
+}
+
+/** Yapışkan başlıklı, zebra satırlı tablo (ekranda .8rem). */
+function buildTable({ columns, rows }) {
+  // Neden: yazdırmada sığması için font/padding küçültüldü.
+  const th = (c) =>
+    `<th style="position:sticky; top:0; background:#fff; border-bottom:1px solid #eee; padding:6px; text-align:${c.align || 'left'}; font-size:.8rem;">${c.label}</th>`;
+  const td = (c, v) =>
+    `<td style="padding:6px; border-bottom:1px solid #f4f4f4; text-align:${c.align || 'left'}; font-size:.8rem;">${v ?? ''}</td>`;
+
+  const header = `<thead><tr>${columns.map(th).join('')}</tr></thead>`;
+  const body = `<tbody>${
+    rows
+      .map((r, i) =>
+        `<tr style="background:${i % 2 ? '#fcfcfc' : 'transparent'};">` +
+        columns.map((c) => td(c, r[c.key])).join('') +
+        `</tr>`
+      )
+      .join('')
+  }</tbody>`;
+
+  return `<div style="overflow:auto; border:1px solid #eee; border-radius:12px;">
+    <table data-report-table="1" style="width:100%; border-collapse:collapse; font-size:.8rem; background:#fff;">${header}${body}</table>
+  </div>`;
+}
+
+/** Sayı hücresi. */
+function numCell(n) { return `<span style="font-variant-numeric: tabular-nums;">${tl(toNumberSafe(n))}</span>`; }
+
+/** Tarih aralığı etiketi. */
+function rangeLabel(sd, ed) {
+  const fmt = (d) => d ? d.toLocaleDateString('tr-TR') : '—';
+  return `Tarih Aralığı: <strong>${fmt(sd)}</strong> – <strong>${fmt(ed)}</strong>`;
+}
+
+/** Canvas temizle (Chart.js tekrar render). */
+function resetCanvas(containerEl, canvasId) {
+  const old = document.getElementById(canvasId);
+  if (old) old.remove();
+  const cv = document.createElement('canvas');
+  cv.id = canvasId;
+  cv.height = 220;
+  cv.className = 'chart-container';
+  containerEl.appendChild(cv);
+  return cv;
+}
+
+/** ========== Yazdırma Yardımcısı ========== */
+/* Neden: overflow/taşmaları önlemek için print-friendly yeni pencere açılır. */
+function printRapor(orientation = 'portrait', title = 'Rapor') {
+  const html = window.lastReportHTML || document.getElementById('raporlarSonuc')?.innerHTML || '';
+  const w = window.open('', '_blank');
+  if (!w) { alert('Açılır pencere engellendi. Lütfen izin verin.'); return; }
+  const isLandscape = String(orientation).toLowerCase() === 'landscape';
+
+  w.document.write(`<!DOCTYPE html>
+  <html lang="tr"><head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1"/>
+    <title>${title}</title>
+    <style>
+      @media print {
+        body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        @page { size: A4 ${isLandscape ? 'landscape' : 'portrait'}; margin: 6mm; } /* minimum güvenli */
+        #raporRoot { font-size: 9pt !important; }
+        #raporRoot h2, #raporRoot h3 { margin: 0 0 4px 0 !important; }
+        .report-header, .report-footer, .summary-cards { break-inside: avoid; page-break-inside: avoid; }
+        .summary-cards { margin-bottom: 6mm !important; box-shadow: none !important; }
+        .summary-cards > div { box-shadow: none !important; border: 1px solid #ddd !important; }
+        .chart-container { display: none !important; }
+        table[data-report-table="1"] { width:100% !important; border-collapse: collapse !important; font-size: 8.5pt !important; }
+        table[data-report-table="1"] thead { display: table-header-group !important; }
+        table[data-report-table="1"] tfoot { display: table-footer-group !Important; }
+        table[data-report-table="1"] thead th { position: static !important; background:#fff !important; border-bottom:1px solid #bbb !important; padding:5px 6px !important; }
+        table[data-report-table="1"] td { padding:5px 6px !important; border-bottom:1px solid #eee !important; }
+        table[data-report-table="1"] tr { break-inside: avoid; page-break-inside: avoid; }
+        table[data-report-table="1"] tr[style*="background"] { background: transparent !important; }
+      }
+      body { margin:0; padding:6mm; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
+      #raporRoot img { max-width: 100%; height: auto; }
+    </style>
+  </head>
+  <body>
+    <div id="raporRoot">${html}</div>
+    <script>window.onload=function(){setTimeout(function(){window.print();window.onafterprint=window.close;},50);}<\/script>
+  </body></html>`);
+  w.document.close();
+}
+
+/** ========== Ana Giriş: raporlarOlustur ========== */
 function raporlarOlustur() {
   const tur = document.getElementById('raporlar-tur')?.value || '';
   const baslangic = document.getElementById('raporlar-start-date')?.value || '';
@@ -6471,306 +6624,379 @@ function raporlarOlustur() {
   const sinif = document.getElementById('raporlar-sinif')?.value || '';
   const grup = document.getElementById('raporlar-grup')?.value || '';
   const program = document.getElementById('raporlar-program')?.value || '';
-  // Rapor türüne göre ilgili fonksiyona yönlendir
+
   if (tur === 'finans') {
     generateFinansRaporu(baslangic, bitis, sinif, grup, program);
   } else if (tur === 'ogrenci') {
-    // Öğrenci raporu
     generateOgrenciRaporu(baslangic, bitis, sinif, grup, program);
   } else if (tur === 'taksit') {
-    // Taksit durumu raporu
     generateTaksitRaporu(baslangic, bitis, sinif, grup, program);
   } else {
-    // Desteklenmeyen rapor türü
     const sonucEl = document.getElementById('raporlarSonuc');
     sonucEl.innerHTML = '<p>Bu rapor türü için geliştirme yapılacaktır.</p>';
-    // Desteklenmeyen rapor türü için baslık ve logo eklenerek kullanıcıya bilgi verilir
-    window.lastReportHTML =
-      '<div style="display:flex; align-items:center; margin-bottom:1rem;">' +
-      '<img src="https://i.ibb.co/cS9PSRpq/Logo-Fenomen.jpg" style="width:60px;height:auto;margin-right:10px;" />' +
-      '<div>' +
-      '<h2 style="margin:0;">Fenomen Çocuk Kulübü</h2>' +
-      '<p style="margin:0;">Seçilen rapor türü: ' + tur + ' henüz desteklenmiyor.</p>' +
-      '</div>' +
-      '</div>';
+    window.lastReportHTML = buildReportHeader('Rapor', `Seçilen rapor türü: <strong>${tur}</strong> henüz desteklenmiyor.`);
   }
 }
 
-// Finansal rapor üretimi – aylık özet (gelir/gider)
-function generateFinansRaporu(startDate, endDate, sinif, grup, program) {
+/** ========== Finans Raporu (Aylık Özet) ========== */
+function generateFinansRaporu(startDate, endDate, _sinif, _grup, _program) {
   const sonucEl = document.getElementById('raporlarSonuc');
   sonucEl.innerHTML = '<p>Yükleniyor...</p>';
+
+  const sd = toDateSafe(startDate);
+  const ed = toDateSafe(endDate); if (ed) ed.setHours(23,59,59,999);
+
   firebase.database().ref('kayitlar').once('value', snap => {
-    const data = snap.val();
-    const summary = {};
-    if (data) {
-      Object.values(data).forEach(k => {
-        const tarih = k.tarih;
-        if (!tarih) return;
-        const dateObj = new Date(tarih);
-        if (startDate) {
-          const sd = new Date(startDate);
-          if (dateObj < sd) return;
+    const data = snap.val() || {};
+    const monthly = {};
+    let totalGelir = 0, totalGider = 0;
+
+    Object.values(data).forEach(k => {
+      const d = toDateSafe(k?.tarih);
+      if (!d) return;
+      if (sd && d < sd) return;
+      if (ed && d > ed) return;
+
+      const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+      if (!monthly[key]) {
+        monthly[key] = { gelir:0, gider:0, display: d.toLocaleDateString('tr-TR', { year:'numeric', month:'long' }) };
+      }
+      const tutar = toNumberSafe(k?.tutar);
+      if (k?.tip === 'gelir') {
+        monthly[key].gelir += tutar; totalGelir += tutar;
+      } else if (k?.tip === 'gider') {
+        monthly[key].gider += tutar; totalGider += tutar;
+      }
+    });
+
+    const keys = Object.keys(monthly).sort();
+    const rows = keys.map(key => {
+      const m = monthly[key];
+      const fark = m.gelir - m.gider;
+      return {
+        ay: m.display,
+        gelir: numCell(m.gelir),
+        gider: numCell(m.gider),
+        fark: `<span style="color:${fark<0?'#c0392b':'#145a32'}; font-weight:700;">${tl(fark)}</span>`
+      };
+    });
+
+    const toplamFark = totalGelir - totalGider;
+    rows.push({
+      ay: '<strong>Toplam</strong>',
+      gelir: `<strong>${tl(totalGelir)}</strong>`,
+      gider: `<strong>${tl(totalGider)}</strong>`,
+      fark: `<strong style="color:${toplamFark<0?'#c0392b':'#145a32'}">${tl(toplamFark)}</strong>`
+    });
+
+    const table = buildTable({
+      columns: [
+        { key:'ay', label:'Ay' },
+        { key:'gelir', label:'Toplam Gelir (₺)', align:'right' },
+        { key:'gider', label:'Toplam Gider (₺)', align:'right' },
+        { key:'fark', label:'Fark (₺)', align:'right' },
+      ],
+      rows
+    });
+
+    const header = buildReportHeader('Aylık Finansal Özet', rangeLabel(sd, ed));
+    const summaries = buildSummaryCards([
+      { label:'Toplam Gelir', value: tl(totalGelir), cls:'gelir' },
+      { label:'Toplam Gider', value: tl(totalGider), cls:'gider' },
+      { label:'Net Fark', value: tl(toplamFark), cls:'fark' },
+    ]);
+
+    const chartWrap = document.createElement('div');
+    chartWrap.style.margin = '1rem 0';
+    const cv = resetCanvas(chartWrap, 'finansRaporChart');
+
+    sonucEl.innerHTML = header + summaries + table;
+    sonucEl.appendChild(chartWrap);
+
+    if (window.Chart) {
+      const labels = keys.map(k => monthly[k].display);
+      const net = keys.map(k => monthly[k].gelir - monthly[k].gider);
+      new Chart(cv.getContext('2d'), {
+        type: 'bar',
+        data: { labels, datasets: [{ label: 'Aylık Net (₺)', data: net }] },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          scales: { y: { beginAtZero: true, ticks: { callback: (v)=> tl(v).replace('₺','') } } }
         }
-        if (endDate) {
-          const ed = new Date(endDate);
-          // son günün saat farklılığı nedeniyle ertesi güne kaymaması için gün sonu olarak ayarla
-          ed.setHours(23,59,59,999);
-          if (dateObj > ed) return;
-        }
-        // Sınıf, grup veya program filtreleri şu an finansal raporda kullanılmıyor; ileri geliştirme için hazır.
-        const ayStr = dateObj.toLocaleDateString('tr-TR', { year:'numeric', month:'long' });
-        if (!summary[ayStr]) summary[ayStr] = { gelir:0, gider:0 };
-        const tutar = parseFloat(k.tutar) || 0;
-        if (k.tip === 'gelir') summary[ayStr].gelir += tutar;
-        else if (k.tip === 'gider') summary[ayStr].gider += tutar;
       });
     }
-    const months = Object.keys(summary).sort((a,b) => new Date('1 ' + a) - new Date('1 ' + b));
-    let tableHTML = '<table style="width:100%; border-collapse: collapse; font-size:0.9rem;">';
-    tableHTML += '<thead><tr><th style="text-align:left; border-bottom:1px solid #ddd; padding:6px;">Ay</th>' +
-                 '<th style="text-align:right; border-bottom:1px solid #ddd; padding:6px;">Toplam Gelir (₺)</th>' +
-                 '<th style="text-align:right; border-bottom:1px solid #ddd; padding:6px;">Toplam Gider (₺)</th>' +
-                 '<th style="text-align:right; border-bottom:1px solid #ddd; padding:6px;">Fark (₺)</th></tr></thead><tbody>';
-    months.forEach(ay => {
-      const g = summary[ay].gelir.toFixed(2);
-      const d = summary[ay].gider.toFixed(2);
-      const fark = (summary[ay].gelir - summary[ay].gider).toFixed(2);
-      tableHTML += '<tr><td style="padding:6px;">' + ay + '</td>' +
-                   '<td style="padding:6px; text-align:right;">' + g + '</td>' +
-                   '<td style="padding:6px; text-align:right;">' + d + '</td>' +
-                   '<td style="padding:6px; text-align:right;">' + fark + '</td></tr>';
-    });
-    tableHTML += '</tbody></table>';
-    sonucEl.innerHTML = tableHTML;
-    // Yazdırma ve WhatsApp mesajı için başlık ve tabloyu sakla
-    // Rapor çıktısında kulüp logosunun sol üst köşede görünmesi için başlığa logo ekliyoruz.
-    window.lastReportHTML =
-      '<div style="display:flex; align-items:center; margin-bottom:1rem;">' +
-      '<img src="https://i.ibb.co/cS9PSRpq/Logo-Fenomen.jpg" style="width:60px;height:auto;margin-right:10px;" />' +
-      '<div>' +
-      '<h2 style="margin:0;">Fenomen Çocuk Kulübü</h2>' +
-      '<h3 style="margin:0;">Aylık Finansal Özet</h3>' +
-      '</div>' +
-      '</div>' +
-      tableHTML;
+
+    window.lastReportHTML = header + summaries + table;
+  }, err => {
+    sonucEl.innerHTML = `<p>Hata: ${err?.message || 'Veri okunamadı'}</p>`;
   });
 }
 
-// Öğrenci raporu oluşturur: ödeme bilgilerini ve kalan tutarları listeler
+/** ========== Öğrenci Ödeme Raporu ========== */
 function generateOgrenciRaporu(startDate, endDate, sinif, grup, program) {
   const sonucEl = document.getElementById('raporlarSonuc');
   sonucEl.innerHTML = '<p>Yükleniyor...</p>';
+
+  const sd = toDateSafe(startDate);
+  const ed = toDateSafe(endDate); if (ed) ed.setHours(23,59,59,999);
+
   firebase.database().ref('ogrenciler').once('value', snap => {
-    const data = snap.val();
-    const rows = [];
-    if (data) {
-      Object.values(data).forEach(item => {
-        const ogr = item.ogrenci || {};
-        const taksitler = item.odeme?.taksitler || {};
-        const toplamTutar = item.odeme?.toplamTutar ? parseFloat(item.odeme.toplamTutar) : 0;
-        // Sınıf, grup ve program filtreleri
-        if (sinif && ogr.sinif && ogr.sinif.toString() !== sinif.toString()) return;
-        if (grup && ogr.grup && ogr.grup.toString() !== grup.toString()) return;
-        if (program && ogr.egitimProgrami && ogr.egitimProgrami.toString() !== program.toString()) return;
-        // Tarih aralığı filtresi: kayıt tarihi veya eklenmeZamani kullan
-        let dateStr = ogr.kayitTarihi || ogr.islemTarihi || item.eklenmeZamani || '';
-        if (startDate) {
-          const sd = new Date(startDate);
-          const d = dateStr ? new Date(dateStr) : null;
-          if (d && d < sd) return;
-        }
-        if (endDate) {
-          const ed = new Date(endDate);
-          ed.setHours(23,59,59,999);
-          const d = dateStr ? new Date(dateStr) : null;
-          if (d && d > ed) return;
-        }
-        // Ödenen ve kalan tutarların hesabı
-        let paid = 0;
-        let remaining = 0;
-        Object.values(taksitler).forEach(t => {
-          const tutar = parseFloat(t.tutar || 0);
-          const odenen = parseFloat(t.odenen || 0);
-          paid += odenen;
-          remaining += (tutar - odenen);
-        });
-        rows.push({
-          adSoyad: ogr.adSoyad || '',
-          ogrNo: ogr.ogrNo || '',
-          sinif: ogr.sinif || '',
-          grup: ogr.grup || '',
-          program: ogr.egitimProgrami || '',
-          toplam: toplamTutar.toFixed(2),
-          odenen: paid.toFixed(2),
-          kalan: remaining.toFixed(2)
-        });
+    const data = snap.val() || {};
+    const rowsRaw = [];
+
+    Object.values(data).forEach(item => {
+      const ogr = item?.ogrenci || {};
+      const taksitler = item?.odeme?.taksitler || {};
+      const toplamTutar = toNumberSafe(item?.odeme?.toplamTutar);
+
+      if (sinif && ogr?.sinif && String(ogr.sinif) !== String(sinif)) return;
+      if (grup && ogr?.grup && String(ogr.grup) !== String(grup)) return;
+      if (program && ogr?.egitimProgrami && String(ogr.egitimProgrami) !== String(program)) return;
+
+      const d = toDateSafe(ogr?.kayitTarihi || ogr?.islemTarihi || item?.eklenmeZamani);
+      if (sd && d && d < sd) return;
+      if (ed && d && d > ed) return;
+
+      let paid = 0, remaining = 0;
+      Object.values(taksitler).forEach(t => {
+        const tutar = toNumberSafe(t?.tutar);
+        const odenen = toNumberSafe(t?.odenen);
+        paid += odenen;
+        remaining += (tutar - odenen);
       });
-    }
-    if (rows.length === 0) {
+      const yuzde = toplamTutar > 0 ? Math.min(100, Math.max(0, (paid / toplamTutar) * 100)) : 0;
+
+      rowsRaw.push({
+        adSoyad: ogr?.adSoyad || '',
+        ogrNo: ogr?.ogrNo || '',
+        sinif: ogr?.sinif || '',
+        grup: ogr?.grup || '',
+        program: ogr?.egitimProgrami || '',
+        toplam: toplamTutar,
+        odenen: paid,
+        kalan: remaining,
+        yuzde
+      });
+    });
+
+    if (!rowsRaw.length) {
       sonucEl.innerHTML = '<p>Listelenecek öğrenci bulunamadı.</p>';
       window.lastReportHTML = '';
       return;
     }
-    // Tabloyu oluştur
-    let html = '<table style="width:100%; border-collapse: collapse; font-size:0.9rem;">';
-    html += '<thead><tr>' +
-      '<th style="text-align:left; border-bottom:1px solid #ddd; padding:6px;">Öğrenci</th>' +
-      '<th style="text-align:left; border-bottom:1px solid #ddd; padding:6px;">No</th>' +
-      '<th style="text-align:left; border-bottom:1px solid #ddd; padding:6px;">Sınıf</th>' +
-      '<th style="text-align:left; border-bottom:1px solid #ddd; padding:6px;">Grup</th>' +
-      '<th style="text-align:left; border-bottom:1px solid #ddd; padding:6px;">Program</th>' +
-      '<th style="text-align:right; border-bottom:1px solid #ddd; padding:6px;">Toplam (₺)</th>' +
-      '<th style="text-align:right; border-bottom:1px solid #ddd; padding:6px;">Ödenen (₺)</th>' +
-      '<th style="text-align:right; border-bottom:1px solid #ddd; padding:6px;">Kalan (₺)</th>' +
-      '</tr></thead><tbody>';
+
+    rowsRaw.sort((a,b) => b.kalan - a.kalan);
+
     let toplamToplam = 0, toplamOdenen = 0, toplamKalan = 0;
-    rows.forEach(r => {
-      html += '<tr><td style="padding:6px;">' + r.adSoyad + '</td>' +
-        '<td style="padding:6px;">' + r.ogrNo + '</td>' +
-        '<td style="padding:6px;">' + r.sinif + '</td>' +
-        '<td style="padding:6px;">' + r.grup + '</td>' +
-        '<td style="padding:6px;">' + r.program + '</td>' +
-        '<td style="padding:6px; text-align:right;">' + r.toplam + '</td>' +
-        '<td style="padding:6px; text-align:right;">' + r.odenen + '</td>' +
-        '<td style="padding:6px; text-align:right;">' + r.kalan + '</td></tr>';
-      toplamToplam += parseFloat(r.toplam);
-      toplamOdenen += parseFloat(r.odenen);
-      toplamKalan += parseFloat(r.kalan);
+    const rows = rowsRaw.map(r => {
+      toplamToplam += r.toplam;
+      toplamOdenen += r.odenen;
+      toplamKalan += r.kalan;
+
+      const hasDebt = r.kalan > 0;
+      const pct = Math.round(r.yuzde);
+      const badge = `<span style="background:${hasDebt ? '#e67e22' : '#2ecc71'}; color:#fff; padding:1px 6px; border-radius:999px; font-size:.72rem; white-space:nowrap;">${hasDebt ? 'Borç' : 'OK'}</span>`;
+
+      return {
+        adSoyad: r.adSoyad,
+        ogrNo: r.ogrNo,
+        sinif: r.sinif,
+        grup: r.grup,
+        program: r.program,
+        toplam: numCell(r.toplam),
+        odenen: numCell(r.odenen),
+        kalan: `<span style="font-weight:700; color:${hasDebt?'#c0392b':'#145a32'}">${tl(r.kalan)}</span>`,
+        // Tek satır, kompakt bar + % + rozet
+        yuzde: `<div style="display:flex; align-items:center; gap:.4rem; white-space:nowrap;">
+                 <div style="flex:0 0 72px; height:6px; background:#eee; border-radius:999px; overflow:hidden;">
+                   <div style="width:${pct}%; height:100%; background:#2ecc71;"></div>
+                 </div>
+                 <span style="min-width:28px; text-align:right; font-weight:600;">${pct}%</span>${badge}
+               </div>`
+      };
     });
-    html += '<tr style="font-weight:bold;"><td style="padding:6px;" colspan="5">Toplam</td>' +
-      '<td style="padding:6px; text-align:right;">' + toplamToplam.toFixed(2) + '</td>' +
-      '<td style="padding:6px; text-align:right;">' + toplamOdenen.toFixed(2) + '</td>' +
-      '<td style="padding:6px; text-align:right;">' + toplamKalan.toFixed(2) + '</td></tr>';
-    html += '</tbody></table>';
-    sonucEl.innerHTML = html;
-    // Öğrenci ödeme raporunun başlığına kulüp logosu eklendi
-    window.lastReportHTML =
-      '<div style="display:flex; align-items:center; margin-bottom:1rem;">' +
-      '<img src="https://i.ibb.co/cS9PSRpq/Logo-Fenomen.jpg" style="width:60px;height:auto;margin-right:10px;" />' +
-      '<div>' +
-      '<h2 style="margin:0;">Fenomen Çocuk Kulübü</h2>' +
-      '<h3 style="margin:0;">Öğrenci Ödeme Raporu</h3>' +
-      '</div>' +
-      '</div>' +
-      html;
+
+    rows.push({
+      adSoyad: '<strong>Toplam</strong>',
+      ogrNo: '',
+      sinif: '',
+      grup: '',
+      program: '',
+      toplam: `<strong>${tl(toplamToplam)}</strong>`,
+      odenen: `<strong>${tl(toplamOdenen)}</strong>`,
+      kalan: `<strong>${tl(toplamKalan)}</strong>`,
+      yuzde: ''
+    });
+
+    const header = buildReportHeader('Öğrenci Ödeme Raporu', rangeLabel(sd, ed));
+    const summaries = buildSummaryCards([
+      { label:'Toplam', value: tl(toplamToplam), cls:'gelir' },
+      { label:'Ödenen', value: tl(toplamOdenen), cls:'gelir' },
+      { label:'Kalan', value: tl(toplamKalan), cls:'gider' },
+    ]);
+
+    const table = buildTable({
+      columns: [
+        { key:'adSoyad', label:'Öğrenci' },
+        { key:'ogrNo', label:'No' },
+        { key:'sinif', label:'Sınıf' },
+        { key:'grup', label:'Grup' },
+        { key:'program', label:'Program' },
+        { key:'toplam', label:'Toplam (₺)', align:'right' },
+        { key:'odenen', label:'Ödenen (₺)', align:'right' },
+        { key:'kalan', label:'Kalan (₺)', align:'right' },
+        { key:'yuzde', label:'Ödeme İlerleme' },
+      ],
+      rows
+    });
+
+    const extra = `<div style="margin-top:.5rem; color:#666; font-size:.9rem;">
+      Ortalama Kalan: <strong>${tl(toplamKalan / Math.max(1, rowsRaw.length))}</strong> (öğrenci başına)
+    </div>`;
+
+    sonucEl.innerHTML = header + summaries + table + extra;
+    window.lastReportHTML = header + summaries + table + extra;
+  }, err => {
+    sonucEl.innerHTML = `<p>Hata: ${err?.message || 'Veri okunamadı'}</p>`;
   });
 }
 
-// Taksit durumu raporu: taksitlerin vade ve ödeme durumlarını listeler
+/** ========== Taksit Durumu Raporu ========== */
 function generateTaksitRaporu(startDate, endDate, sinif, grup, program) {
   const sonucEl = document.getElementById('raporlarSonuc');
   sonucEl.innerHTML = '<p>Yükleniyor...</p>';
+
+  const sd = toDateSafe(startDate);
+  const ed = toDateSafe(endDate); if (ed) ed.setHours(23,59,59,999);
+  const today = new Date(); today.setHours(0,0,0,0);
+
   firebase.database().ref('ogrenciler').once('value', snap => {
-    const data = snap.val();
-    const rows = [];
-    if (data) {
-      Object.values(data).forEach(item => {
-        const ogr = item.ogrenci || {};
-        const taksitler = item.odeme?.taksitler || {};
-        // Sınıf, grup, program filtreleri
-        if (sinif && ogr.sinif && ogr.sinif.toString() !== sinif.toString()) return;
-        if (grup && ogr.grup && ogr.grup.toString() !== grup.toString()) return;
-        if (program && ogr.egitimProgrami && ogr.egitimProgrami.toString() !== program.toString()) return;
-        Object.entries(taksitler).forEach(([idx, t]) => {
-          const date = t.tarih ? new Date(t.tarih) : null;
-          if (!date || isNaN(date)) return;
-          // Tarih aralığı filtresi (vade)
-          if (startDate) {
-            const sd = new Date(startDate);
-            if (date < sd) return;
-          }
-          if (endDate) {
-            const ed = new Date(endDate);
-            ed.setHours(23,59,59,999);
-            if (date > ed) return;
-          }
-          const tutar = parseFloat(t.tutar || 0);
-          const odenen = parseFloat(t.odenen || 0);
-          const kalan = tutar - odenen;
-          let durum = '';
-          const today = new Date();
-          if (t.odendi || kalan <= 0) {
-            durum = 'Ödendi';
-          } else if (date < today) {
-            durum = 'Vadesi Geçti';
-          } else if (date.toDateString() === today.toDateString()) {
-            durum = 'Bugün';
-          } else {
-            durum = 'Yaklaşan';
-          }
-          rows.push({
-            tarih: date,
-            adSoyad: ogr.adSoyad || '',
-            ogrNo: ogr.ogrNo || '',
-            sinif: ogr.sinif || '',
-            grup: ogr.grup || '',
-            program: ogr.egitimProgrami || '',
-            taksitNo: parseInt(idx) + 1,
-            tutar: tutar.toFixed(2),
-            odenen: odenen.toFixed(2),
-            kalan: kalan.toFixed(2),
-            durum: durum
-          });
+    const data = snap.val() || {};
+    const rowsRaw = [];
+
+    Object.values(data).forEach(item => {
+      const ogr = item?.ogrenci || {};
+      const taksitler = item?.odeme?.taksitler || {};
+
+      if (sinif && ogr?.sinif && String(ogr.sinif) !== String(sinif)) return;
+      if (grup && ogr?.grup && String(ogr.grup) !== String(grup)) return;
+      if (program && ogr?.egitimProgrami && String(ogr.egitimProgrami) !== String(program)) return;
+
+      Object.entries(taksitler).forEach(([idx, t]) => {
+        const d = toDateSafe(t?.tarih);
+        if (!d) return;
+        if (sd && d < sd) return;
+        if (ed && d > ed) return;
+
+        const tutar = toNumberSafe(t?.tutar);
+        const odenen = toNumberSafe(t?.odenen);
+        const kalan = Math.max(0, tutar - odenen);
+
+        let durum = 'Yaklaşan', color = '#f39c12', short = 'Yaklaşan';
+        const odendi = !!t?.odendi || kalan <= 0;
+        if (odendi) {
+          durum = 'Ödendi'; color = '#27ae60'; short = 'Ödendi';
+        } else if (d < today) {
+          durum = 'Vadesi Geçti'; color = '#c0392b'; short = 'V.Geçti';
+        } else if (d.toDateString() === today.toDateString()) {
+          durum = 'Bugün'; color = '#8e44ad'; short = 'Bugün';
+        }
+
+        rowsRaw.push({
+          tarih: d,
+          adSoyad: ogr?.adSoyad || '',
+          ogrNo: ogr?.ogrNo || '',
+          sinif: ogr?.sinif || '',
+          grup: ogr?.grup || '',
+          program: ogr?.egitimProgrami || '',
+          taksitNo: (parseInt(idx,10) + 1) || '',
+          tutar, odenen, kalan,
+          durum, color, short
         });
       });
-    }
-    if (rows.length === 0) {
+    });
+
+    if (!rowsRaw.length) {
       sonucEl.innerHTML = '<p>Listelenecek taksit bulunamadı.</p>';
       window.lastReportHTML = '';
       return;
     }
-    // Vade sırasına göre sıralama
-    rows.sort((a,b) => a.tarih - b.tarih);
-    let html = '<table style="width:100%; border-collapse: collapse; font-size:0.9rem;">';
-    html += '<thead><tr>' +
-      '<th style="text-align:left; border-bottom:1px solid #ddd; padding:6px;">Vade</th>' +
-      '<th style="text-align:left; border-bottom:1px solid #ddd; padding:6px;">Öğrenci</th>' +
-      '<th style="text-align:left; border-bottom:1px solid #ddd; padding:6px;">No</th>' +
-      '<th style="text-align:left; border-bottom:1px solid #ddd; padding:6px;">Sınıf</th>' +
-      '<th style="text-align:left; border-bottom:1px solid #ddd; padding:6px;">Grup</th>' +
-      '<th style="text-align:left; border-bottom:1px solid #ddd; padding:6px;">Program</th>' +
-      '<th style="text-align:right; border-bottom:1px solid #ddd; padding:6px;">Taksit No</th>' +
-      '<th style="text-align:right; border-bottom:1px solid #ddd; padding:6px;">Tutar (₺)</th>' +
-      '<th style="text-align:right; border-bottom:1px solid #ddd; padding:6px;">Ödenen (₺)</th>' +
-      '<th style="text-align:right; border-bottom:1px solid #ddd; padding:6px;">Kalan (₺)</th>' +
-      '<th style="text-align:left; border-bottom:1px solid #ddd; padding:6px;">Durum</th>' +
-      '</tr></thead><tbody>';
+
+    rowsRaw.sort((a,b) => a.tarih - b.tarih);
+
     let toplamTutar = 0, toplamOdenen = 0, toplamKalan = 0;
-    rows.forEach(r => {
-      const dateStr = r.tarih.toLocaleDateString('tr-TR');
-      html += '<tr><td style="padding:6px;">' + dateStr + '</td>' +
-        '<td style="padding:6px;">' + r.adSoyad + '</td>' +
-        '<td style="padding:6px;">' + r.ogrNo + '</td>' +
-        '<td style="padding:6px;">' + r.sinif + '</td>' +
-        '<td style="padding:6px;">' + r.grup + '</td>' +
-        '<td style="padding:6px;">' + r.program + '</td>' +
-        '<td style="padding:6px; text-align:right;">' + r.taksitNo + '</td>' +
-        '<td style="padding:6px; text-align:right;">' + r.tutar + '</td>' +
-        '<td style="padding:6px; text-align:right;">' + r.odenen + '</td>' +
-        '<td style="padding:6px; text-align:right;">' + r.kalan + '</td>' +
-        '<td style="padding:6px;">' + r.durum + '</td></tr>';
-      toplamTutar += parseFloat(r.tutar);
-      toplamOdenen += parseFloat(r.odenen);
-      toplamKalan += parseFloat(r.kalan);
+    let overdue = 0, upcoming = 0, todayCnt = 0, paidCnt = 0;
+
+    const rows = rowsRaw.map(r => {
+      toplamTutar += r.tutar;
+      toplamOdenen += r.odenen;
+      toplamKalan += r.kalan;
+      if (r.durum === 'Vadesi Geçti') overdue++;
+      else if (r.durum === 'Yaklaşan') upcoming++;
+      else if (r.durum === 'Bugün') todayCnt++;
+      else if (r.durum === 'Ödendi') paidCnt++;
+
+      // Tek satır, renkli nokta + kısa metin
+      const dot = `<span style="display:inline-block; width:8px; height:8px; background:${r.color}; border-radius:50%;"></span>`;
+      const badge = `<span style="display:inline-flex; align-items:center; gap:6px; background:rgba(0,0,0,.04); padding:1px 6px; border-radius:999px; font-size:.72rem; white-space:nowrap;">${dot}<span>${r.short}</span></span>`;
+
+      return {
+        vade: r.tarih.toLocaleDateString('tr-TR'),
+        adSoyad: r.adSoyad,
+        ogrNo: r.ogrNo,
+        sinif: r.sinif,
+        grup: r.grup,
+        program: r.program,
+        taksitNo: r.taksitNo,
+        tutar: numCell(r.tutar),
+        odenen: numCell(r.odenen),
+        kalan: `<span style="font-weight:700; color:${r.kalan>0?'#c0392b':'#145a32'}">${tl(r.kalan)}</span>`,
+        durum: badge
+      };
     });
-    html += '<tr style="font-weight:bold;"><td style="padding:6px;" colspan="7">Toplam</td>' +
-      '<td style="padding:6px; text-align:right;">' + toplamTutar.toFixed(2) + '</td>' +
-      '<td style="padding:6px; text-align:right;">' + toplamOdenen.toFixed(2) + '</td>' +
-      '<td style="padding:6px; text-align:right;">' + toplamKalan.toFixed(2) + '</td>' +
-      '<td style="padding:6px;"></td></tr>';
-    html += '</tbody></table>';
-    sonucEl.innerHTML = html;
-    // Taksit durumu raporunun başlığına kulüp logosu eklendi
-    window.lastReportHTML =
-      '<div style="display:flex; align-items:center; margin-bottom:1rem;">' +
-      '<img src="https://i.ibb.co/cS9PSRpq/Logo-Fenomen.jpg" style="width:60px;height:auto;margin-right:10px;" />' +
-      '<div>' +
-      '<h2 style="margin:0;">Fenomen Çocuk Kulübü</h2>' +
-      '<h3 style="margin:0;">Taksit Durumu Raporu</h3>' +
-      '</div>' +
-      '</div>' +
-      html;
+
+    rows.push({
+      vade: '<strong>Toplam</strong>',
+      adSoyad: '',
+      ogrNo: '',
+      sinif: '',
+      grup: '',
+      program: '',
+      taksitNo: '',
+      tutar: `<strong>${tl(toplamTutar)}</strong>`,
+      odenen: `<strong>${tl(toplamOdenen)}</strong>`,
+      kalan: `<strong>${tl(toplamKalan)}</strong>`,
+      durum: ''
+    });
+
+    const header = buildReportHeader('Taksit Durumu Raporu', rangeLabel(sd, ed));
+    const summaries = buildSummaryCards([
+      { label:'Vadesi Geçmiş', value: overdue, cls:'gider' },
+      { label:'Bugün', value: todayCnt, cls:'fark' },
+      { label:'Yaklaşan (7g+)', value: upcoming, cls:'gelir' },
+    ]);
+
+    const table = buildTable({
+      columns: [
+        { key:'vade', label:'Vade' },
+        { key:'adSoyad', label:'Öğrenci' },
+        { key:'ogrNo', label:'No' },
+        { key:'sinif', label:'Sınıf' },
+        { key:'grup', label:'Grup' },
+        { key:'program', label:'Program' },
+        { key:'taksitNo', label:'Taksit No', align:'right' },
+        { key:'tutar', label:'Tutar (₺)', align:'right' },
+        { key:'odenen', label:'Ödenen (₺)', align:'right' },
+        { key:'kalan', label:'Kalan (₺)', align:'right' },
+        { key:'durum', label:'Durum' },
+      ],
+      rows
+    });
+
+    sonucEl.innerHTML = header + summaries + table;
+    window.lastReportHTML = header + summaries + table;
+  }, err => {
+    sonucEl.innerHTML = `<p>Hata: ${err?.message || 'Veri okunamadı'}</p>`;
   });
 }
 
@@ -6810,80 +7036,261 @@ function raporlarYazdir() {
   printWin.close();
 }
 
-// WhatsApp mesajı oluşturma fonksiyonu
+// /assets/js/raporlarWhatsappGonder.pretty.js
+// WhatsApp için sade, profesyonel ve anlaşılır metin üretir.
 function raporlarWhatsappGonder() {
-  // WhatsApp mesajını rapor verilerine göre hazırlayıp modal penceresini açar.
-  // Kullanıcı rapor oluşturmadan bu butona basarsa uyarı gösterilir.
-  if (!window.lastReportHTML) {
-    Swal.fire('Uyarı','Lütfen önce rapor oluşturun.','warning');
+  // Rapor yoksa kullanıcıyı bilgilendir (neden: boş mesajı önlemek)
+  if (!window.lastReportHTML || typeof window.lastReportHTML !== 'string' || !window.lastReportHTML.trim()) {
+    if (typeof Swal !== 'undefined') Swal.fire('Uyarı', 'Lütfen önce rapor oluşturun.', 'warning');
     return;
   }
-  // Seçilen rapor parametrelerini oku
-  const tur = document.getElementById('raporlar-tur')?.value || '';
-  const baslangic = document.getElementById('raporlar-start-date')?.value || '';
-  const bitis = document.getElementById('raporlar-end-date')?.value || '';
-  const sinif = document.getElementById('raporlar-sinif')?.value || '';
-  const grup = document.getElementById('raporlar-grup')?.value || '';
-  const program = document.getElementById('raporlar-program')?.value || '';
-  // Rapor içeriğini DOM'a yükleyip düz metne çevir
-  const tempDiv = document.createElement('div');
-  tempDiv.innerHTML = window.lastReportHTML;
-  // Tabloyu daha okunabilir bir düz metne çevir.
-  let raporMetni = '';
-  const table = tempDiv.querySelector('table');
-  if (table) {
-    const rows = Array.from(table.querySelectorAll('tr'));
-    const rowTexts = rows.map(row => {
-      const cells = Array.from(row.children);
-      // Hücre içeriklerini çubuklarla ayırarak birleştir
-      return cells.map(c => c.innerText.trim()).join(' | ');
-    });
-    raporMetni = rowTexts.join('\n');
-  } else {
-    // Eğer tablo yoksa tüm içeriği tek satır olarak al
-    raporMetni = tempDiv.innerText.trim();
-  }
-  // Mesaj başlığı ve seçilen filtreleri topla
-  const turMap = { finans: 'Finansal Rapor', ogrenci: 'Öğrenci Raporu', taksit: 'Taksit Durumu Raporu' };
+
+  // --------- Yardımcılar ---------
+  const val = (id) => {
+    const el = document.getElementById(id);
+    return el && 'value' in el ? String(el.value).trim() : '';
+  };
+  const norm = (s) => String(s || '').replace(/\s+/g, ' ').trim();
+  const safeFormatDate = (isoStr) => {
+    if (!isoStr) return '';
+    try { if (typeof formatTarih === 'function') return formatTarih(isoStr); } catch(_) {}
+    return isoStr;
+  };
+  const joinNonEmpty = (arr, sep) => arr.filter(Boolean).join(sep);
+
+  const parseFirstTable = (html) => {
+    const wrap = document.createElement('div');
+    wrap.innerHTML = html;
+    const table = wrap.querySelector('table');
+    if (!table) return null;
+
+    const cellText = (el) => norm(el.textContent);
+    // Başlıklar
+    let headers = [];
+    const theadRow = table.querySelector('thead tr');
+    if (theadRow) headers = Array.from(theadRow.children).map(cellText);
+    // Tüm satırlar
+    const allRows = Array.from(table.querySelectorAll('tr')).map(tr => Array.from(tr.children).map(cellText));
+
+    let rows = allRows;
+    if (!headers.length && allRows.length) {
+      headers = allRows[0];
+      rows = allRows.slice(1);
+    } else if (theadRow) {
+      const headCount = Array.from(table.querySelectorAll('thead tr')).length;
+      rows = allRows.slice(headCount);
+    }
+    rows = rows.filter(r => r.some(c => c));
+    return { headers, rows };
+  };
+
+  const filtersLine = ({ baslangic, bitis, sinif, grup, program }) => {
+    const bas = safeFormatDate(baslangic);
+    const bit = safeFormatDate(bitis);
+    const tarih = bas && bit ? `Tarih: ${bas}–${bit}` : bas ? `Başlangıç: ${bas}` : bit ? `Bitiş: ${bit}` : '';
+    const sin = sinif ? `Sınıf: ${sinif}` : '';
+    const grp = grup ? `Grup: ${grup}` : '';
+    const prg = program ? `Program: ${program}` : '';
+    const s = joinNonEmpty([tarih, sin, grp, prg], ' | ');
+    return s ? `(${s})` : '';
+  };
+
+  // --------- Biçimlendiriciler (sade & profesyonel) ---------
+  const formatFinans = (m) => {
+    const H = m.headers.map(h => h.toLowerCase());
+    const idx = {
+      ay: H.findIndex(h => h.includes('ay')),
+      gelir: H.findIndex(h => h.includes('gelir')),
+      gider: H.findIndex(h => h.includes('gider')),
+      fark: H.findIndex(h => h.includes('fark')),
+    };
+
+    const items = [];
+    let toplam = null;
+
+    for (const r of m.rows) {
+      const key = (r[idx.ay] || '').toLowerCase();
+      if (key === 'toplam') {
+        toplam = { gelir: r[idx.gelir] || '', gider: r[idx.gider] || '', fark: r[idx.fark] || '' };
+        continue;
+      }
+      items.push(`• ${r[idx.ay] || '—'} — Gelir: ${r[idx.gelir] || '—'}, Gider: ${r[idx.gider] || '—'}, Fark: ${r[idx.fark] || '—'}`);
+    }
+
+    const out = [];
+    if (items.length) out.push('Özet:', ...items);
+    if (toplam) out.push('', `Toplam — Gelir: ${toplam.gelir} | Gider: ${toplam.gider} | Fark: ${toplam.fark}`);
+    return out.join('\n');
+  };
+
+  const formatOgrenci = (m) => {
+    const H = m.headers.map(h => h.toLowerCase());
+    const idx = {
+      ad: H.findIndex(h => h.includes('öğrenci')),
+      no: H.findIndex(h => h === 'no' || h.includes('no')),
+      sinif: H.findIndex(h => h.includes('sınıf')),
+      grup: H.findIndex(h => h.includes('grup')),
+      program: H.findIndex(h => h.includes('program')),
+      toplam: H.findIndex(h => h.includes('toplam')),
+      odenen: H.findIndex(h => h.includes('ödenen')),
+      kalan: H.findIndex(h => h.includes('kalan')),
+      ilerleme: H.findIndex(h => h.includes('ilerleme')),
+    };
+
+    const items = [];
+    let totals = null;
+
+    for (const r of m.rows) {
+      const first = (r[idx.ad] || '').toLowerCase();
+      if (first === 'toplam') {
+        totals = { toplam: r[idx.toplam] || '', odenen: r[idx.odenen] || '', kalan: r[idx.kalan] || '' };
+        continue;
+      }
+      const kisaKimlik = joinNonEmpty(
+        [
+          r[idx.no] ? `No: ${r[idx.no]}` : '',
+          joinNonEmpty([r[idx.sinif] ? `Sınıf ${r[idx.sinif]}` : '', r[idx.grup] ? `Grup ${r[idx.grup]}` : ''], ' / '),
+          r[idx.program] ? r[idx.program] : '',
+        ],
+        ' | '
+      );
+      const finans = joinNonEmpty(
+        [
+          r[idx.odenen] ? `Ödenen: ${r[idx.odenen]}` : '',
+          r[idx.toplam] ? `Toplam: ${r[idx.toplam]}` : '',
+          r[idx.kalan] ? `Kalan: ${r[idx.kalan]}` : '',
+        ],
+        '  •  '
+      );
+      const iler = idx.ilerleme > -1 && r[idx.ilerleme] ? ` (${r[idx.ilerleme]})` : '';
+      items.push(`• ${r[idx.ad] || '—'} — ${kisaKimlik}\n  ${finans}${iler}`);
+    }
+
+    const out = [];
+    if (items.length) out.push('Öğrenciler:', ...items);
+    if (totals) out.push('', `Toplam — Tahakkuk: ${totals.toplam} | Ödenen: ${totals.odenen} | Kalan: ${totals.kalan}`);
+    return out.join('\n');
+  };
+
+  const formatTaksit = (m) => {
+    const H = m.headers.map(h => h.toLowerCase());
+    const idx = {
+      vade: H.findIndex(h => h.includes('vade')),
+      ad: H.findIndex(h => h.includes('öğrenci')),
+      no: H.findIndex(h => h === 'no' || h.includes('no')),
+      sinif: H.findIndex(h => h.includes('sınıf')),
+      grup: H.findIndex(h => h.includes('grup')),
+      program: H.findIndex(h => h.includes('program')),
+      taksitNo: H.findIndex(h => h.includes('taksit no')),
+      tutar: H.findIndex(h => h.includes('tutar')),
+      odenen: H.findIndex(h => h.includes('ödenen')),
+      kalan: H.findIndex(h => h.includes('kalan')),
+      durum: H.findIndex(h => h.includes('durum')),
+    };
+
+    const gecen = [];
+    const yaklasan = [];
+    let totals = null;
+
+    for (const r of m.rows) {
+      const first = (r[0] || '').toLowerCase();
+      if (first === 'toplam') {
+        totals = { tutar: r[idx.tutar] || '', odenen: r[idx.odenen] || '', kalan: r[idx.kalan] || '' };
+        continue;
+      }
+      const kimlik = joinNonEmpty(
+        [
+          r[idx.ad] || '—',
+          r[idx.no] ? `No: ${r[idx.no]}` : '',
+          joinNonEmpty([r[idx.sinif] ? `Sınıf ${r[idx.sinif]}` : '', r[idx.grup] ? `Grup ${r[idx.grup]}` : ''], ' / '),
+          r[idx.program] || '',
+        ],
+        ' | '
+      );
+      const finans = joinNonEmpty(
+        [
+          r[idx.tutar] ? `Tutar: ${r[idx.tutar]}` : '',
+          r[idx.odenen] ? `Ödenen: ${r[idx.odenen]}` : '',
+          r[idx.kalan] ? `Kalan: ${r[idx.kalan]}` : '',
+        ],
+        '  •  '
+      );
+      const satir = `• ${r[idx.vade] || '—'} — Taksit #${r[idx.taksitNo] || '—'}\n  ${kimlik}\n  ${finans}`;
+      const d = (r[idx.durum] || '').toLowerCase();
+      if (d.includes('geç')) gecen.push(satir); else yaklasan.push(satir);
+    }
+
+    const out = [];
+    if (gecen.length) out.push(`Vadesi Geçen (${gecen.length}):`, ...gecen, '');
+    if (yaklasan.length) out.push(`Yaklaşan (${yaklasan.length}):`, ...yaklasan);
+    if (out.length && out[out.length - 1] === '') out.pop();
+    if (totals) out.push('', `Toplam — Tutar: ${totals.tutar} | Ödenen: ${totals.odenen} | Kalan: ${totals.kalan}`);
+    return out.join('\n');
+  };
+
+  const formatGeneric = (m) => {
+    if (!m) return '';
+    const hdr = m.headers;
+    const items = m.rows.map(r => '• ' + r.map((c,i) => `${hdr[i] || `Kolon ${i+1}`}: ${c || '—'}`).join(' | '));
+    return items.join('\n');
+  };
+
+  // --------- Seçimler ---------
+  const tur       = val('raporlar-tur');
+  const baslangic = val('raporlar-start-date');
+  const bitis     = val('raporlar-end-date');
+  const sinif     = val('raporlar-sinif');
+  const grup      = val('raporlar-grup');
+  const program   = val('raporlar-program');
+
+  const model = parseFirstTable(window.lastReportHTML);
+
+  // --------- Başlıklar ---------
+  const turMap = {
+    finans:  'Finansal Rapor',
+    ogrenci: 'Öğrenci Raporu',
+    taksit:  'Taksit Durumu Raporu',
+  };
+  const title = 'Fenomen Çocuk Kulübü';
+  const sub   = turMap[tur] || '';
+
   const lines = [];
-  lines.push('Fenomen Çocuk Kulübü');
-  if (turMap[tur]) {
-    lines.push('');
-    lines.push(turMap[tur]);
+  lines.push(sub ? `${title} — ${sub}` : title);
+
+  const filt = filtersLine({ baslangic, bitis, sinif, grup, program });
+  if (filt) lines.push(filt);
+  lines.push(''); // boş satır
+
+  // --------- Gövde ---------
+  let body = '';
+  if (model) {
+    if (tur === 'finans') body = formatFinans(model);
+    else if (tur === 'ogrenci') body = formatOgrenci(model);
+    else if (tur === 'taksit') body = formatTaksit(model);
+    else body = formatGeneric(model);
+  } else {
+    const tmp = document.createElement('div');
+    tmp.innerHTML = window.lastReportHTML;
+    body = norm(tmp.textContent).replace(/\s*\n\s*/g, '\n');
   }
-  // Tarih aralığı varsa ekle
-  if (baslangic || bitis) {
-    let basStr = '';
-    let bitStr = '';
-    try {
-      basStr = baslangic ? formatTarih(baslangic) : '';
-    } catch(e) {
-      basStr = baslangic;
-    }
-    try {
-      bitStr = bitis ? formatTarih(bitis) : '';
-    } catch(e) {
-      bitStr = bitis;
-    }
-    if (basStr && bitStr) {
-      lines.push(`Tarih Aralığı: ${basStr} - ${bitStr}`);
-    } else if (basStr) {
-      lines.push(`Başlangıç Tarihi: ${basStr}`);
-    } else if (bitStr) {
-      lines.push(`Bitiş Tarihi: ${bitStr}`);
-    }
-  }
-  if (sinif) lines.push(`Sınıf: ${sinif}`);
-  if (grup) lines.push(`Grup: ${grup}`);
-  if (program) lines.push(`Program: ${program}`);
-  if (lines[lines.length - 1] !== '') lines.push('');
-  // Rapor tablosunun düz metnini ekle
-  lines.push(raporMetni);
+  lines.push(body || '—');
+
+  // --------- Çıkış ---------
   const finalMsg = lines.join('\n');
-  document.getElementById('whatsappMesaji').value = finalMsg;
-  // Modal'i elle aç: mesaj zaten atandı, olusturWhatsappMesaji() çağrılmasın
-  document.getElementById('whatsappModal').style.display = 'block';
+  const textarea = document.getElementById('whatsappMesaji');
+  const modal    = document.getElementById('whatsappModal');
+
+  if (!textarea || !modal) {
+    if (typeof Swal !== 'undefined') Swal.fire('Hata', 'WhatsApp mesaj alanı veya modal bulunamadı.', 'error');
+    return;
+  }
+
+  textarea.value = finalMsg;
+  modal.style.display = 'block';
 }
+
+
+
 
   /* ------------------ TAKSIT / ODEME BITIS ------------------ */
 
@@ -6983,7 +7390,131 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 });
+
+
+// 1) Tek merkezde etiketler
+const ODEME_TURU_LABELS = {
+  nakit: 'Nakit',
+  kredi_karti: 'Kredi Kartı',
+  eft: 'EFT / Havale',
+  elden_banka: 'Elden Bankaya Yatırma',
+  online: 'Online Ödeme',
+  diger: 'Diğer'
+};
+function odemeEtiketi(val) {
+  const key = (val || '').toLowerCase().trim();
+  // "diğer" → "diger" normalize desteği
+  const fixed = key.replace('ğ','g').replace('ı','i').replace('ö','o').replace('ü','u').replace('ş','s').replace('ç','c');
+  return ODEME_TURU_LABELS[key] || ODEME_TURU_LABELS[fixed] || (val || '');
+}
+
+// Listeleme fonksiyonunda:
+firebase.database().ref('kayitlar').once('value')
+  .then(snap => {
+    snap.forEach(child => {
+      const kayit = child.val();
+      const odemeGorunen = odemeEtiketi(kayit.odeme);
+      console.log(kayit.kategori, '-', odemeGorunen, '-', kayit.tutar);
+      // Burada odeme yerine odemeGorunen'i UI'ya bas
+    });
+  });
+// 2) Modal: seçenekleri map'ten üret, KOD döndür
+async function secOdemeTuru() {
+  const optionsHtml = [
+    `<option value="" selected>Seçiniz</option>`,
+    ...Object.entries(ODEME_TURU_LABELS).map(([k,v]) => `<option value="${k}">${v}</option>`)
+  ].join('');
+
+  const html = `
+    <div class="odeme-select-wrap">
+      <label for="odemeTurSelect" class="odeme-select-label">Ödeme Türü:</label>
+      <select id="odemeTurSelect" class="odeme-select" autofocus>
+        ${optionsHtml}
+      </select>
+    </div>
+  `;
+
+  const result = await Swal.fire({
+    title: 'Ödeme Türü',
+    html,
+    focusConfirm: false,
+    showCancelButton: true,
+    confirmButtonText: '✅ Kaydet',
+    cancelButtonText: '❌ İptal',
+    customClass: {
+      popup: 'swal-odeme-popup',
+      confirmButton: 'swal2-confirm-btn',
+      cancelButton: 'swal2-cancel-btn'
+    },
+    preConfirm: () => {
+      const val = document.getElementById('odemeTurSelect').value;
+      if (!val) { Swal.showValidationMessage('Lütfen bir ödeme türü seçin'); return false; }
+      return val; // <- KOD döner (örn. "kredi_karti")
+    },
+    didOpen: () => {
+      const sel = document.getElementById('odemeTurSelect');
+      sel?.focus();
+      // Enter ile onay
+      sel?.addEventListener('keydown', (e)=>{ if(e.key==='Enter') Swal.clickConfirm(); });
+    }
+  });
+
+  return result.isConfirmed ? result.value : null;
+}
+
+/* 3) Stil – taşmayı önle, hover ekle */
+(function injectSwalOdemeStyles(){
+  if (document.getElementById('swal-odeme-styles')) return;
+  const style = document.createElement('style');
+  style.id = 'swal-odeme-styles';
+  style.textContent = `
+    .swal-odeme-popup{ padding: 1.5rem 1.5rem 1.2rem !important; }
+    .swal-odeme-popup .swal2-html-container{ margin: 0 !important; width: 100%; }
+
+    .odeme-select-wrap{ width: 100%; }
+    .odeme-select-label{ display:block; margin-bottom: 6px; font-weight:600; color:#444; }
+
+    /* Select modal içine tam sığsın */
+    .odeme-select{
+      width: 100%;
+      max-width: 100%;
+      box-sizing: border-box;
+      padding: 10px 12px;
+      border: 1px solid #ccc;
+      border-radius: 10px;
+      font-size: 15px;
+      background: #fff;
+      outline: none;                /* native outline taşır */
+    }
+    .odeme-select:focus{
+      border-color: #FF6B00;
+      box-shadow: 0 0 0 3px rgba(255,107,0,.2); /* taşma yapmayan odak halkası */
+    }
+
+    /* Butonlar + hover */
+    .swal2-confirm-btn{
+      background-color:#FF6B00 !important;
+      border-radius:8px !important;
+      font-weight:600 !important;
+      transition: background-color .25s ease;
+    }
+    .swal2-confirm-btn:hover{ background-color:#e25a00 !important; }
+    .swal2-cancel-btn{
+      background-color:#6c757d !important;
+      border-radius:8px !important;
+      font-weight:600 !important;
+      transition: background-color .25s ease;
+    }
+    .swal2-cancel-btn:hover{ background-color:#5a6268 !important; }
+
+    @media (max-width: 480px){
+      .swal-odeme-popup{ width: calc(100vw - 24px) !important; }
+    }
+  `;
+  document.head.appendChild(style);
+})();
 </script>
+
 
 </body>
 </html>
