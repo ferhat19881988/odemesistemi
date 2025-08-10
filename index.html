@@ -6052,87 +6052,251 @@ function getTodayLocal() {
 
   // Toplu silme işlemi
   function acTopluSilModal() {
-    // Filtrelenmiş öğrencileri kullan, yoksa önce listeleyin
-    const list = window.filteredOgrenciler && Array.isArray(window.filteredOgrenciler)
-      ? window.filteredOgrenciler
-      : [];
-    if (!list || list.length === 0) {
-      Swal.fire('Uyarı', 'Silinecek öğrenci bulunamadı. Lütfen önce listeleyin veya filtreleyin.', 'warning');
-      return;
-    }
-    // Hazırlanacak modal içeriği ve arama filtreli liste oluşturma
-    Swal.fire({
-      title: 'Toplu Silme',
-      html: `
-        <input id="sil-search" class="swal2-input" placeholder="Öğrenci ara (ad veya no)">
-        <div id="sil-list" style="max-height:300px; overflow:auto; text-align:left; margin-top:0.5rem;"></div>
-      `,
-      showCancelButton: true,
-      confirmButtonText: 'Seçilenleri Sil',
-      cancelButtonText: 'İptal',
-      didOpen: () => {
-        const listContainer = document.getElementById('sil-list');
-        function renderList(filter = '') {
-          const filtLower = filter.toLowerCase();
-          listContainer.innerHTML = list
-            .filter(item => {
-              const ad = (item.ogrenci?.adSoyad || '').toLowerCase();
-              const no = (item.ogrenci?.ogrNo || '').toLowerCase();
-              return ad.includes(filtLower) || no.includes(filtLower);
-            })
-            .map(item => {
-              const ad = item.ogrenci?.adSoyad || '-';
-              const no = item.ogrenci?.ogrNo || '-';
-              return `<label style="display:flex; align-items:center; margin:4px 0;">
-                <input type="checkbox" value="${item.id}" style="margin-right:8px;"> ${ad} (${no})
-              </label>`;
-            })
-            .join('');
+  // Filtrelenmiş öğrencileri kullan, yoksa önce listeleyin
+  const list = (window.filteredOgrenciler && Array.isArray(window.filteredOgrenciler))
+    ? window.filteredOgrenciler
+    : [];
+
+  if (!list || list.length === 0) {
+    Swal.fire('Uyarı', 'Silinecek öğrenci bulunamadı. Lütfen önce listeleyin veya filtreleyin.', 'warning');
+    return;
+  }
+
+  Swal.fire({
+    title: 'Toplu Silme',
+    width: '90vw',
+    html: `
+      <style>
+        #sil-modal { font-size:14px; }
+        #sil-toolbar {
+          display:flex; gap:12px; align-items:center; justify-content:space-between; margin-bottom:.5rem;
+          position:sticky; top:0; background:#fff; z-index:1; padding-top:4px;
         }
-        renderList();
-        const searchInput = document.getElementById('sil-search');
-        searchInput.addEventListener('input', (e) => {
-          renderList(e.target.value);
+        #sil-search {
+          flex:1; min-width:200px;
+        }
+        #sil-actions { display:flex; gap:10px; align-items:center; }
+        #sil-summary { font-size:12px; opacity:.8; margin-bottom:6px; }
+        #sil-list {
+          max-height:55vh; overflow:auto; border:1px solid #e5e7eb; border-radius:8px;
+        }
+        .sil-row {
+          display:grid; grid-template-columns: 28px 1fr auto; align-items:center; gap:10px;
+          padding:10px 12px; border-bottom:1px solid #f1f5f9; cursor:pointer;
+        }
+        .sil-row:last-child { border-bottom:none; }
+        .sil-row:hover { background:#f8fafc; }
+        .sil-name {
+          font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+        }
+        .sil-no {
+          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+          opacity:.7;
+        }
+        .sil-muted { opacity:.6; }
+        .sil-badge {
+          display:inline-block; font-size:11px; padding:2px 6px; border:1px solid #e5e7eb; border-radius:999px; margin-left:6px;
+        }
+        .sil-ctrl {
+          background:transparent; border:1px solid #e5e7eb; padding:6px 8px; border-radius:6px; cursor:pointer;
+        }
+        .sil-ctrl:hover { background:#f8fafc; }
+        label.sil-selectall { user-select:none; cursor:pointer; display:flex; align-items:center; gap:6px; }
+      </style>
+
+      <div id="sil-modal">
+        <div id="sil-toolbar">
+          <input id="sil-search" class="swal2-input" placeholder="Öğrenci ara (ad veya no)" style="margin:0;">
+          <div id="sil-actions">
+            <label class="sil-selectall" title="Filtreye uyanların hepsini seç">
+              <input type="checkbox" id="sil-select-all">
+              <span>Tümünü Seç (filtre)</span>
+            </label>
+            <button type="button" id="sil-clear" class="sil-ctrl">Seçimi Temizle</button>
+          </div>
+        </div>
+        <div id="sil-summary">
+          <span>Toplam: <b id="sil-total">0</b></span>
+          <span class="sil-badge">Seçili: <b id="sil-selected">0</b></span>
+          <span class="sil-badge">Filtre Sonucu: <b id="sil-filtered">0</b></span>
+        </div>
+        <div id="sil-list" aria-label="Öğrenci listesi"></div>
+        <div class="sil-muted" style="margin-top:8px; font-size:12px;">
+          İpucu: Bir satıra tıklayarak seçim yapabilir/iptal edebilirsiniz. Ctrl+A: filtreye uyanların tümünü seç.
+        </div>
+      </div>
+    `,
+    showCancelButton: true,
+    confirmButtonText: 'Seçilenleri Sil',
+    cancelButtonText: 'İptal',
+    focusConfirm: false,
+    didOpen: () => {
+      const listContainer = document.getElementById('sil-list');
+      const searchInput   = document.getElementById('sil-search');
+      const totalEl       = document.getElementById('sil-total');
+      const selectedEl    = document.getElementById('sil-selected');
+      const filteredEl    = document.getElementById('sil-filtered');
+      const selectAllEl   = document.getElementById('sil-select-all');
+      const clearBtn      = document.getElementById('sil-clear');
+
+      // Seçim durumu filtre bağımsız korunur
+      const selectedIds = new Set();
+
+      totalEl.textContent = String(list.length);
+
+      const normalize = (s) => (s || '').toString().toLowerCase().trim();
+
+      function getFiltered(filterText) {
+        const f = normalize(filterText);
+        if (!f) return list.slice();
+        return list.filter(item => {
+          const ad = normalize(item.ogrenci?.adSoyad);
+          const no = normalize(item.ogrenci?.ogrNo);
+          return ad.includes(f) || no.includes(f);
         });
-      },
-      preConfirm: () => {
-        const checkboxes = document.querySelectorAll('#sil-list input[type=checkbox]:checked');
-        const ids = Array.from(checkboxes).map(cb => cb.value);
-        if (ids.length === 0) {
-          Swal.showValidationMessage('Lütfen silinecek öğrencileri seçin');
-        }
-        return ids;
       }
-    }).then(res => {
-      if (!res.isConfirmed) return;
-      const selectedIds = res.value || [];
-      if (selectedIds.length === 0) return;
-      // Kesin onay için ikinci bir modal
-      Swal.fire({
-        title: 'Emin misiniz?',
-        text: `${selectedIds.length} öğrenciyi silmek üzeresiniz. Bu işlem geri alınamaz.`,
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonText: 'Evet, sil',
-        cancelButtonText: 'İptal'
-      }).then(res2 => {
-        if (!res2.isConfirmed) return;
-        const updates = {};
-        selectedIds.forEach(id => {
-          updates[`ogrenciler/${id}`] = null;
-        });
-        firebase.database().ref().update(updates).then(() => {
-          Swal.fire('Silindi', 'Seçilen öğrenciler silindi.', 'success');
-          ogrListele();
-          taksitListele();
-          odemeListele();
-        }).catch(err => {
-          console.error(err);
-          Swal.fire('Hata', 'Öğrenciler silinirken hata oluştu.', 'error');
-        });
+
+      function renderList(filterText = '') {
+        const filtered = getFiltered(filterText);
+        filteredEl.textContent = String(filtered.length);
+
+        const html = filtered.map(item => {
+          const ad = item.ogrenci?.adSoyad || '-';
+          const no = item.ogrenci?.ogrNo || '-';
+          const id = item.id;
+          const checked = selectedIds.has(String(id)) ? 'checked' : '';
+          return `
+            <div class="sil-row" data-id="${id}" role="button" tabindex="0" aria-pressed="${checked ? 'true' : 'false'}">
+              <input type="checkbox" class="sil-cb" value="${id}" ${checked} aria-label="${ad} (${no})">
+              <div class="sil-name" title="${ad}">${ad}</div>
+              <div class="sil-no">(${no})</div>
+            </div>
+          `;
+        }).join('');
+        listContainer.innerHTML = html;
+
+        // Filtreye uyanların hepsi seçili mi?
+        const allFilteredSelected = filtered.length > 0 && filtered.every(it => selectedIds.has(String(it.id)));
+        selectAllEl.checked = allFilteredSelected;
+        selectedEl.textContent = String(selectedIds.size);
+      }
+
+      // Event delegation: satır tıklaması checkbox'ı togglesın
+      listContainer.addEventListener('click', (e) => {
+        const row = e.target.closest('.sil-row');
+        if (!row) return;
+        const cb = row.querySelector('.sil-cb');
+        // Checkbox'a direkt tıklandıysa iki kez toggling olmasın
+        const directOnCb = e.target === cb;
+        if (!directOnCb) cb.checked = !cb.checked;
+
+        const id = String(cb.value);
+        if (cb.checked) selectedIds.add(id); else selectedIds.delete(id);
+
+        row.setAttribute('aria-pressed', cb.checked ? 'true' : 'false');
+        selectedEl.textContent = String(selectedIds.size);
+      });
+
+      // Klavye ile: Enter/Space satırı togglesın, Ctrl+A filtredekileri seçsin
+      listContainer.addEventListener('keydown', (e) => {
+        const row = e.target.closest('.sil-row');
+        if (!row) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          row.click();
+        }
+      });
+
+      document.addEventListener('keydown', (e) => {
+        if (e.ctrlKey && (e.key === 'a' || e.key === 'A')) {
+          e.preventDefault();
+          const filtered = getFiltered(searchInput.value);
+          filtered.forEach(it => selectedIds.add(String(it.id)));
+          renderList(searchInput.value);
+        }
+      }, { capture: true });
+
+      // Tümünü Seç (yalnızca filtreye uyanlar)
+      selectAllEl.addEventListener('change', () => {
+        const filtered = getFiltered(searchInput.value);
+        if (selectAllEl.checked) {
+          filtered.forEach(it => selectedIds.add(String(it.id)));
+        } else {
+          filtered.forEach(it => selectedIds.delete(String(it.id)));
+        }
+        renderList(searchInput.value);
+      });
+
+      // Seçimi Temizle
+      clearBtn.addEventListener('click', () => {
+        selectedIds.clear();
+        renderList(searchInput.value);
+      });
+
+      // Arama: ufak debounce
+      let t;
+      searchInput.addEventListener('input', (e) => {
+        clearTimeout(t);
+        t = setTimeout(() => renderList(e.target.value), 150);
+      });
+
+      // İlk render
+      renderList('');
+      // Arama kutusuna odak
+      searchInput.focus();
+
+      // PreConfirm'de bu set'i kullanabilmek için referansı swal instance'a takalım
+      // (preConfirm içinde window üzerinden erişeceğiz)
+      window.__silTmpSelectedIds = selectedIds;
+      window.__silTmpGetFiltered = getFiltered;
+    },
+    preConfirm: () => {
+      // Seçimler filtre bağımsız Set'te tutuluyor
+      const selected = window.__silTmpSelectedIds ? Array.from(window.__silTmpSelectedIds) : [];
+      if (selected.length === 0) {
+        Swal.showValidationMessage('Lütfen silinecek öğrencileri seçin');
+      }
+      return selected;
+    },
+    willClose: () => {
+      // temizlik
+      try {
+        delete window.__silTmpSelectedIds;
+        delete window.__silTmpGetFiltered;
+      } catch {}
+    }
+  }).then(res => {
+    if (!res.isConfirmed) return;
+    const selectedIds = res.value || [];
+    if (selectedIds.length === 0) return;
+
+    // Kesin onay için ikinci bir modal
+    Swal.fire({
+      title: 'Emin misiniz?',
+      text: `${selectedIds.length} öğrenciyi silmek üzeresiniz. Bu işlem geri alınamaz.`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Evet, sil',
+      cancelButtonText: 'İptal'
+    }).then(res2 => {
+      if (!res2.isConfirmed) return;
+      const updates = {};
+      selectedIds.forEach(id => {
+        updates[`ogrenciler/${id}`] = null;
+      });
+      firebase.database().ref().update(updates).then(() => {
+        Swal.fire('Silindi', 'Seçilen öğrenciler silindi.', 'success');
+        ogrListele();
+        taksitListele();
+        odemeListele();
+      }).catch(err => {
+        console.error(err);
+        Swal.fire('Hata', 'Öğrenciler silinirken hata oluştu.', 'error');
       });
     });
-  }
+  });
+}
+
 
   /* ========= YAZDIRMA VE RAPORLAMA ========= */
   // Yazdırma ve raporlama butonları için basit fonksiyonlar
