@@ -7015,7 +7015,6 @@ function generateOgrenciRaporu(startDate, endDate, sinif, grup, program) {
     });
 
     const extra = `<div style="margin-top:.5rem; color:#666; font-size:.9rem;">
-      Ortalama Kalan: <strong>${tl(toplamKalan / Math.max(1, rowsRaw.length))}</strong> (öğrenci başına)
     </div>`;
 
     sonucEl.innerHTML = header + summaries + table + extra;
@@ -7183,22 +7182,188 @@ function raporlarExcelIndir() {
 }
 
 // Raporu yazdırmak için yeni fonksiyon
+// /index.html
 function raporlarYazdir() {
   if (!window.lastReportHTML) {
-    Swal.fire('Uyarı','Lütfen önce rapor oluşturun.','warning');
+    Swal.fire('Uyarı', 'Lütfen önce rapor oluşturun.', 'warning');
     return;
   }
+
   const printWin = window.open('', '_blank');
-  printWin.document.write('<html><head><title>Fenomen Çocuk Kulübü Rapor</title>');
-  printWin.document.write('<style>body{font-family:Arial, sans-serif; margin:20px;} table{width:100%; border-collapse:collapse;} th, td{border:1px solid #ddd; padding:8px;} th{background:#f2f2f2;}</style>');
-  printWin.document.write('</head><body>');
-  printWin.document.write(window.lastReportHTML);
-  printWin.document.write('</body></html>');
+  if (!printWin) {
+    Swal.fire('Engellendi', 'Tarayıcı açılır pencereleri engelledi. Lütfen izin verip tekrar deneyin.', 'error');
+    return;
+  }
+
+  printWin.document.open();
+  printWin.document.write(`
+    <!DOCTYPE html>
+    <html lang="tr">
+    <head>
+      <meta charset="UTF-8">
+      <title>Fenomen Çocuk Kulübü Rapor</title>
+      <style id="base-style">
+        :root { --fs: 12px; --pad: 8px; }
+        html, body { margin: 0; padding: 0; }
+        body { font-family: Arial, sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        #raporRoot { margin: 20px; font-size: var(--fs); }
+        table { width: 100%; border-collapse: collapse; table-layout: auto; }
+        th, td { border: 1px solid #ddd; padding: var(--pad); vertical-align: top; }
+        th { background: #f2f2f2; }
+        th, td { word-break: break-word; overflow-wrap: anywhere; }
+
+        /* Sadece tarih içeren hücreleri küçültmeden koru */
+        td.date-cell, th.date-cell { font-size: 12px !important; padding: 8px !important; }
+
+        /* Öğrenci dışındaki tüm sütunlarda tek satır */
+        .nowrap-col {
+          white-space: nowrap !important;     /* Neden: Satır kaymasını engelle */
+          word-break: keep-all !important;
+          overflow-wrap: normal !important;
+        }
+
+        @media print {
+          @page { size: A4 portrait; margin: 0; }
+          thead { display: table-header-group; }
+          tfoot { display: table-footer-group; }
+        }
+      </style>
+      <style id="dyn-sizing"></style>
+    </head>
+    <body>
+      <div id="raporRoot">
+        ${window.lastReportHTML}
+      </div>
+
+      <script>
+        // mm -> px
+        function pxFromMM(mm) {
+          var probe = document.createElement('div');
+          probe.style.position = 'absolute';
+          probe.style.visibility = 'hidden';
+          probe.style.width = mm + 'mm';
+          document.body.appendChild(probe);
+          var px = probe.getBoundingClientRect().width;
+          document.body.removeChild(probe);
+          return px;
+        }
+
+        function contentHeightPx(root) {
+          return Math.max(root.scrollHeight, root.offsetHeight, root.getBoundingClientRect().height);
+        }
+
+        function imagesLoaded() {
+          var imgs = Array.from(document.images);
+          if (imgs.length === 0) return Promise.resolve();
+          return Promise.all(imgs.map(function(img){
+            return img.complete ? Promise.resolve() : new Promise(function(res){
+              img.addEventListener('load', res, {once:true});
+              img.addEventListener('error', res, {once:true});
+            });
+          }));
+        }
+
+        function applySizing(fsPx, padPx) {
+          document.getElementById('dyn-sizing').textContent = ':root{--fs:' + fsPx + 'px; --pad:' + padPx + 'px;}';
+        }
+
+        // Sadece tarih içeren hücreleri işaretle (gg.aa.yyyy, gg/aa/yyyy, gg-aa-yyyy vb.)
+        function markDateCells(root) {
+          var dateRegex = /^\\d{1,2}[./-]\\d{1,2}[./-]\\d{2,4}$/;
+          root.querySelectorAll('td, th').forEach(function(cell) {
+            var t = (cell.textContent || '').trim();
+            if (dateRegex.test(t)) cell.classList.add('date-cell');
+          });
+        }
+
+        // "Öğrenci" sütununu bul; DIĞER tüm sütunlara .nowrap-col ekle
+        function nowrapExceptStudent(root) {
+          var tables = root.querySelectorAll('table');
+          tables.forEach(function(tbl){
+            var headerRow = tbl.tHead ? tbl.tHead.rows[0] : tbl.querySelector('tr');
+            if (!headerRow) return;
+
+            var studentIdx = -1;
+            Array.from(headerRow.cells).forEach(function(th, i){
+              var txt = (th.textContent || '').trim().toLowerCase();
+              // İmla varyasyonları (ö/ogrenci)
+              if (txt === 'öğrenci' || txt === 'ogrenci' || txt === 'ögrenci') studentIdx = i;
+            });
+            if (studentIdx === -1) return;
+
+            function markRowCells(row) {
+              Array.from(row.cells).forEach(function(cell, i){
+                if (i !== studentIdx) cell.classList.add('nowrap-col');
+              });
+            }
+
+            // Başlık
+            markRowCells(headerRow);
+            // Gövde
+            Array.from(tbl.tBodies || []).forEach(function(tb){
+              Array.from(tb.rows).forEach(markRowCells);
+            });
+            // Altlık
+            if (tbl.tFoot) {
+              Array.from(tbl.tFoot.rows).forEach(markRowCells);
+            }
+          });
+        }
+
+        function fitToOnePage() {
+          var root = document.getElementById('raporRoot');
+
+          // Neden: Satır kaymasını öncelikle kısıtla, sonra gerekirse boyutu küçült
+          nowrapExceptStudent(root);
+          markDateCells(root);
+
+          var pageHeight = pxFromMM(297);
+          var available = pageHeight - 40; // #raporRoot margin (20px x 2)
+
+          var fontStart = 12, padStart = 8;
+          var MIN_FONT = 8, MIN_PAD = 4, STEP = 0.5;
+
+          var fs = fontStart, pd = padStart;
+          applySizing(fs, pd);
+
+          var guard = 200;
+          while (guard-- > 0) {
+            var h = contentHeightPx(root);
+            if (h <= available) break;
+
+            fs = Math.max(MIN_FONT, +(fs - STEP).toFixed(2));
+            pd = Math.max(MIN_PAD,  +(pd - STEP).toFixed(2));
+            applySizing(fs, pd);
+
+            if (fs === MIN_FONT && pd === MIN_PAD) break;
+          }
+        }
+
+        window.onload = function() {
+          imagesLoaded().then(function(){
+            setTimeout(function(){
+              fitToOnePage();
+              setTimeout(function(){
+                try { window.focus(); window.print(); } catch(e) {}
+                if ('onafterprint' in window) {
+                  window.onafterprint = function() { try { window.close(); } catch(e){} };
+                } else {
+                  setTimeout(function(){ try { window.close(); } catch(e){} }, 500);
+                }
+              }, 50);
+            }, 30);
+          });
+        };
+      <\/script>
+    </body>
+    </html>
+  `);
   printWin.document.close();
-  printWin.focus();
-  printWin.print();
-  printWin.close();
 }
+
+
+
+
 
 // /assets/js/raporlarWhatsappGonder.pretty.js
 // WhatsApp için sade, profesyonel ve anlaşılır metin üretir.
